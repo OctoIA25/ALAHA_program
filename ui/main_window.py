@@ -2,7 +2,7 @@ import asyncio
 import sys
 import os
 import platform
-from typing import Callable
+from typing import Callable, Optional
 
 import customtkinter as ctk
 
@@ -16,13 +16,21 @@ ctk.set_default_color_theme("blue")
 
 
 class MainWindow:
-    def __init__(self, snowflake_id: str, ws_port: int):
+    def __init__(
+        self,
+        snowflake_id: str,
+        dashboard_url: str = "",
+        api_key: str = "",
+        on_config_save: Optional[Callable] = None,
+    ):
         self._snowflake_id = snowflake_id
-        self._ws_port = ws_port
+        self._dashboard_url = dashboard_url
+        self._api_key = api_key
+        self._on_config_save = on_config_save
 
         self.root = ctk.CTk()
         self.root.title("ALAHA Program")
-        self.root.geometry("480x520")
+        self.root.geometry("500x620")
         self.root.resizable(False, False)
 
         self._build_ui()
@@ -41,14 +49,14 @@ class MainWindow:
 
         ctk.CTkLabel(
             header,
-            text="Agente local — conecte pelo ALAHA Dashboard",
+            text="Agente local — conecta ao ALAHA Dashboard",
             font=ctk.CTkFont(size=12),
             text_color="gray",
         ).pack(anchor="w", pady=(2, 0))
 
         # SnowflakeID card
         id_frame = ctk.CTkFrame(self.root)
-        id_frame.pack(fill="x", padx=24, pady=(12, 8))
+        id_frame.pack(fill="x", padx=24, pady=(12, 4))
 
         ctk.CTkLabel(
             id_frame,
@@ -63,7 +71,7 @@ class MainWindow:
         self._id_label = ctk.CTkLabel(
             id_row,
             text=self._snowflake_id,
-            font=ctk.CTkFont(size=18, weight="bold", family="Consolas"),
+            font=ctk.CTkFont(size=16, weight="bold", family="Consolas"),
             text_color="#4488ff",
         )
         self._id_label.pack(side="left")
@@ -77,34 +85,74 @@ class MainWindow:
             command=self._copy_id,
         ).pack(side="right")
 
-        # Instruction
         ctk.CTkLabel(
             self.root,
-            text="Cole este ID no ALAHA Dashboard para conectar.",
+            text="Cole este ID no ALAHA Dashboard para autorizar esta máquina.",
             font=ctk.CTkFont(size=11),
             text_color="#888888",
-        ).pack(padx=24, anchor="w")
+        ).pack(padx=24, anchor="w", pady=(0, 4))
+
+        # Connection config card
+        conn_frame = ctk.CTkFrame(self.root)
+        conn_frame.pack(fill="x", padx=24, pady=(4, 4))
+
+        ctk.CTkLabel(
+            conn_frame,
+            text="Configuração de Conexão",
+            font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="gray",
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        # URL row
+        url_row = ctk.CTkFrame(conn_frame, fg_color="transparent")
+        url_row.pack(fill="x", padx=16, pady=(0, 6))
+        ctk.CTkLabel(url_row, text="URL da Dashboard:", font=ctk.CTkFont(size=11), width=130, anchor="w").pack(side="left")
+        self._url_entry = ctk.CTkEntry(
+            url_row,
+            placeholder_text="https://sua-dashboard.com",
+            font=ctk.CTkFont(size=11),
+        )
+        self._url_entry.pack(side="left", fill="x", expand=True)
+        if self._dashboard_url:
+            self._url_entry.insert(0, self._dashboard_url)
+
+        # API key row
+        key_row = ctk.CTkFrame(conn_frame, fg_color="transparent")
+        key_row.pack(fill="x", padx=16, pady=(0, 14))
+        ctk.CTkLabel(key_row, text="API Key:", font=ctk.CTkFont(size=11), width=130, anchor="w").pack(side="left")
+        self._key_entry = ctk.CTkEntry(
+            key_row,
+            placeholder_text="alaha_...",
+            font=ctk.CTkFont(size=11, family="Consolas"),
+            show="*",
+        )
+        self._key_entry.pack(side="left", fill="x", expand=True)
+        if self._api_key:
+            self._key_entry.insert(0, self._api_key)
+
+        ctk.CTkButton(
+            conn_frame,
+            text="Salvar e Reconectar",
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._save_config,
+        ).pack(fill="x", padx=16, pady=(0, 14))
 
         # Status card
         status_frame = ctk.CTkFrame(self.root)
-        status_frame.pack(fill="x", padx=24, pady=(12, 8))
+        status_frame.pack(fill="x", padx=24, pady=(4, 4))
 
         row_status = ctk.CTkFrame(status_frame, fg_color="transparent")
         row_status.pack(fill="x", padx=16, pady=(14, 4))
         ctk.CTkLabel(row_status, text="Status:", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        self._status_label = ctk.CTkLabel(row_status, text="Aguardando conexao...", text_color="#ffaa00")
+        self._status_label = ctk.CTkLabel(row_status, text="Conectando...", text_color="#ffaa00")
         self._status_label.pack(side="left", padx=10)
 
         row_llm = ctk.CTkFrame(status_frame, fg_color="transparent")
-        row_llm.pack(fill="x", padx=16, pady=(0, 4))
+        row_llm.pack(fill="x", padx=16, pady=(0, 14))
         ctk.CTkLabel(row_llm, text="LLM:", font=ctk.CTkFont(weight="bold")).pack(side="left")
         self._llm_label = ctk.CTkLabel(row_llm, text="—", text_color="gray")
         self._llm_label.pack(side="left", padx=10)
-
-        row_port = ctk.CTkFrame(status_frame, fg_color="transparent")
-        row_port.pack(fill="x", padx=16, pady=(0, 14))
-        ctk.CTkLabel(row_port, text="Porta:", font=ctk.CTkFont(weight="bold")).pack(side="left")
-        ctk.CTkLabel(row_port, text=str(self._ws_port), text_color="#aaaaaa").pack(side="left", padx=10)
 
         # Autostart
         autostart_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -125,10 +173,10 @@ class MainWindow:
             self.root,
             text="Logs",
             font=ctk.CTkFont(size=12, weight="bold"),
-        ).pack(anchor="w", padx=24, pady=(12, 2))
+        ).pack(anchor="w", padx=24, pady=(10, 2))
 
-        self._log_box = ctk.CTkTextbox(self.root, height=120, state="disabled", font=ctk.CTkFont(size=11))
-        self._log_box.pack(fill="both", padx=24, pady=(0, 24), expand=True)
+        self._log_box = ctk.CTkTextbox(self.root, height=110, state="disabled", font=ctk.CTkFont(size=11))
+        self._log_box.pack(fill="both", padx=24, pady=(0, 20), expand=True)
 
     def _copy_id(self) -> None:
         self.root.clipboard_clear()
@@ -188,11 +236,24 @@ class MainWindow:
         except Exception as e:
             log.warning(f"Failed to set autostart: {e}")
 
+    def _save_config(self) -> None:
+        url = self._url_entry.get().strip()
+        key = self._key_entry.get().strip()
+        if not url or not key:
+            log.warning("URL da Dashboard e API Key sao obrigatorios")
+            return
+        log.info(f"Salvando configuracao: {url}")
+        if self._on_config_save:
+            self._on_config_save(url, key)
+
     def update_status(self, status: str) -> None:
         status_map = {
-            "waiting": ("Aguardando conexao...", "#ffaa00"),
+            "connecting": ("Conectando...", "#ffaa00"),
+            "reconnecting": ("Reconectando...", "#ffaa00"),
+            "not_configured": ("Nao configurado", "#ff8800"),
             "online": ("Conectado", "#22cc44"),
             "offline": ("Desconectado", "#ff4444"),
+            "waiting": ("Aguardando conexao...", "#ffaa00"),
             "error": ("Erro", "#ff4444"),
         }
         display, color = status_map.get(status, (status.capitalize(), "gray"))
