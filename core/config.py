@@ -50,6 +50,18 @@ def set_api_key(key: str) -> None:
     log.info("API key updated")
 
 
+def get_connection_endpoint() -> str:
+    cfg = _load_raw()
+    return cfg.get("connection_endpoint", "")
+
+
+def set_connection_endpoint(endpoint: str) -> None:
+    cfg = _load_raw()
+    cfg["connection_endpoint"] = endpoint.strip()
+    _save_raw(cfg)
+    log.info(f"Connection endpoint set to {endpoint.strip()}")
+
+
 def get_autostart() -> bool:
     cfg = _load_raw()
     return cfg.get("autostart", False)

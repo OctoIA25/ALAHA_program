@@ -1,6 +1,7 @@
 import os
 import socket
 import sys
+from urllib.parse import urlparse
 
 import customtkinter as ctk
 
@@ -18,10 +19,11 @@ class MainWindow:
         self._snowflake_id = snowflake_id
         self._ws_port = ws_port
         self._ip_address = self._get_local_ip()
+        self._connection_endpoint = cfg.get_connection_endpoint()
 
         self.root = ctk.CTk()
         self.root.title("ALAHA Program")
-        self.root.geometry("500x600")
+        self.root.geometry("560x720")
         self.root.resizable(False, False)
 
         self._build_ui()
@@ -120,6 +122,45 @@ class MainWindow:
             command=self._copy_ip,
         ).pack(side="right")
 
+        endpoint_frame = ctk.CTkFrame(self.root)
+        endpoint_frame.pack(fill="x", padx=24, pady=(0, 4))
+
+        ctk.CTkLabel(
+            endpoint_frame,
+            text="Endpoint de conexão (opcional)",
+            font=ctk.CTkFont(size=11),
+            text_color="gray",
+        ).pack(anchor="w", padx=16, pady=(14, 2))
+
+        ctk.CTkLabel(
+            endpoint_frame,
+            text="Para Kasm, Docker, NAT ou qualquer ambiente onde o IP local não seja acessível pelo Dashboard.",
+            font=ctk.CTkFont(size=11),
+            text_color="#888888",
+            wraplength=500,
+            justify="left",
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        endpoint_row = ctk.CTkFrame(endpoint_frame, fg_color="transparent")
+        endpoint_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        self._endpoint_entry = ctk.CTkEntry(
+            endpoint_row,
+            placeholder_text="Ex: ws://host-publico:7778",
+        )
+        self._endpoint_entry.pack(side="left", fill="x", expand=True)
+        if self._connection_endpoint:
+            self._endpoint_entry.insert(0, self._connection_endpoint)
+
+        ctk.CTkButton(
+            endpoint_row,
+            text="Salvar",
+            width=70,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            command=self._save_endpoint,
+        ).pack(side="right", padx=(8, 0))
+
         # Status card
         status_frame = ctk.CTkFrame(self.root)
         status_frame.pack(fill="x", padx=24, pady=(4, 4))
@@ -174,6 +215,25 @@ class MainWindow:
         self.root.clipboard_clear()
         self.root.clipboard_append(self._ip_address)
         log.info("IP da maquina copiado para a area de transferencia")
+
+    def _save_endpoint(self) -> None:
+        endpoint = self._endpoint_entry.get().strip()
+        if endpoint and not self._is_valid_endpoint(endpoint):
+            log.warning("Endpoint invalido. Use o formato ws://host:porta")
+            return
+        cfg.set_connection_endpoint(endpoint)
+        self._connection_endpoint = endpoint
+        if endpoint:
+            log.info(f"Endpoint de conexao salvo: {endpoint}")
+        else:
+            log.info("Endpoint de conexao removido")
+
+    def _is_valid_endpoint(self, endpoint: str) -> bool:
+        try:
+            parsed = urlparse(endpoint)
+            return parsed.scheme in {"ws", "wss"} and bool(parsed.hostname) and bool(parsed.port)
+        except Exception:
+            return False
 
     def _get_local_ip(self) -> str:
         try:
