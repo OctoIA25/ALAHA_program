@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.logger import get_logger
 from core.identity import get_or_create_snowflake_id
-from core.connection import ConnectionServer, DEFAULT_PORT
+from core.connection import ConnectionClient
 from core.dispatcher import Dispatcher
 from core.orchestrator import Orchestrator
 from llm.client import LLMClient
@@ -15,14 +15,12 @@ from ui.main_window import MainWindow
 
 log = get_logger("main")
 
-WS_PORT = DEFAULT_PORT
-
 
 class ALAHAProgram:
     def __init__(self):
         self.snowflake_id = get_or_create_snowflake_id()
         self.loop = asyncio.new_event_loop()
-        self.connection = ConnectionServer(self.snowflake_id, WS_PORT)
+        self.connection = ConnectionClient(self.snowflake_id)
         self.llm = LLMClient()
         self.dispatcher = Dispatcher()
         self.orchestrator = Orchestrator(self.connection, self.llm)
@@ -34,7 +32,7 @@ class ALAHAProgram:
 
         self.window = MainWindow(
             snowflake_id=self.snowflake_id,
-            ws_port=WS_PORT,
+            on_reconnect=self._request_reconnect,
         )
 
     def _setup_dispatcher(self) -> None:
@@ -71,7 +69,13 @@ class ALAHAProgram:
     def _on_status_change(self, status: str) -> None:
         self.window.update_status(status)
 
-    async def _start_server(self) -> None:
+    def _request_reconnect(self, dashboard_url: str, api_key: str) -> None:
+        asyncio.run_coroutine_threadsafe(
+            self.connection.reconnect(dashboard_url, api_key),
+            self.loop,
+        )
+
+    async def _start_connection(self) -> None:
         await self.connection.start()
 
     async def _shutdown(self) -> None:
@@ -84,12 +88,12 @@ class ALAHAProgram:
 
     def run(self) -> None:
         log.info(f"ALAHA Program starting | ID: {self.snowflake_id}")
-        log.info(f"WebSocket server on port {WS_PORT}")
+        log.info("Outbound WebSocket client enabled")
 
         async_thread = threading.Thread(target=self._run_async_loop, daemon=True)
         async_thread.start()
 
-        asyncio.run_coroutine_threadsafe(self._start_server(), self.loop)
+        asyncio.run_coroutine_threadsafe(self._start_connection(), self.loop)
 
         try:
             self.window.run()
