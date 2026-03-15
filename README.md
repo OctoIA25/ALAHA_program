@@ -74,13 +74,13 @@ start /min "" venv\Scripts\pythonw.exe main.py
 ### Opção 1: One-liner (mais rápido)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/OctoIA25/ALAHA_program/main/install.sh | bash
 ```
 
 Ou com `wget`:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
+wget -qO- https://raw.githubusercontent.com/OctoIA25/ALAHA_program/main/install.sh | bash
 ```
 
 Isso irá:
@@ -95,7 +95,7 @@ Isso irá:
 
 ```bash
 # Clone o repositório
-git clone https://github.com/seu-usuario/alaha-program.git ~/.local/share/alaha-program
+git clone https://github.com/OctoIA25/ALAHA_program.git ~/.local/share/alaha-program
 cd ~/.local/share/alaha-program
 
 # Crie o ambiente virtual e instale
@@ -139,10 +139,21 @@ systemctl --user status alaha-program
 systemctl --user stop alaha-program
 ```
 
-### Parar o Programa
+### Atualizar o Programa
+
+Sempre que você subir um commit novo, atualize com:
 
 ```bash
-pkill -f "python.*main.py"
+alaha-update
+```
+
+Ou manualmente:
+
+```bash
+cd ~/.local/share/alaha-program
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ---

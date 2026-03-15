@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # ALAHA Program - Instalação Rápida para Linux
-# Uso: curl -fsSL https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
-#   ou: wget -qO- https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
+# Uso: curl -fsSL https://raw.githubusercontent.com/OctoIA25/ALAHA_program/main/install.sh | bash
+#   ou: wget -qO- https://raw.githubusercontent.com/OctoIA25/ALAHA_program/main/install.sh | bash
 
 set -e
 
-REPO_URL="https://github.com/seu-usuario/alaha-program.git"
+REPO_URL="https://github.com/OctoIA25/ALAHA_program.git"
 INSTALL_DIR="${HOME}/.local/share/alaha-program"
 BIN_DIR="${HOME}/.local/bin"
 
@@ -78,6 +78,18 @@ python main.py "$@"
 EOF
 chmod +x "$BIN_DIR/alaha"
 
+# Criar comando de atualização
+cat > "$BIN_DIR/alaha-update" << 'EOF'
+#!/usr/bin/env bash
+echo "Atualizando ALAHA Program..."
+cd "${HOME}/.local/share/alaha-program"
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+echo "Atualização concluída!"
+EOF
+chmod +x "$BIN_DIR/alaha-update"
+
 # Adicionar ao PATH se necessário
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${HOME}/.bashrc"
@@ -89,7 +101,12 @@ echo " =========================================="
 echo -e " ${GREEN}✓ Instalação concluída!${NC}"
 echo " =========================================="
 echo ""
-echo " Comando disponível: alaha"
+echo " Comandos disponíveis:"
+echo "   alaha          - Inicia o programa"
+echo "   alaha-update   - Atualiza para última versão"
+echo ""
+echo " Para atualizar no futuro:"
+echo "   alaha-update"
 echo ""
 echo " Iniciando o programa..."
 echo " Copie o SnowflakeID exibido para conectar na Dashboard."
