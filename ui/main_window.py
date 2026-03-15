@@ -48,7 +48,7 @@ class MainWindow:
 
         ctk.CTkLabel(
             id_frame,
-            text="SnowflakeID da máquina",
+            text="Identificador automático da máquina",
             font=ctk.CTkFont(size=11),
             text_color="gray",
         ).pack(anchor="w", padx=16, pady=(14, 2))
@@ -56,13 +56,13 @@ class MainWindow:
         id_row = ctk.CTkFrame(id_frame, fg_color="transparent")
         id_row.pack(fill="x", padx=16, pady=(0, 14))
 
-        self._snowflake_entry = ctk.CTkEntry(
+        self._id_label = ctk.CTkLabel(
             id_row,
-            placeholder_text="Cole o SnowflakeID gerado no Dashboard",
+            text=self._snowflake_id,
+            font=ctk.CTkFont(size=16, weight="bold", family="Consolas"),
+            text_color="#4488ff",
         )
-        self._snowflake_entry.pack(side="left", fill="x", expand=True)
-        if self._snowflake_id:
-            self._snowflake_entry.insert(0, self._snowflake_id)
+        self._id_label.pack(side="left")
 
         ctk.CTkButton(
             id_row,
@@ -75,7 +75,7 @@ class MainWindow:
 
         ctk.CTkLabel(
             self.root,
-            text="Crie a máquina no ALAHA Dashboard, copie o SnowflakeID gerado e depois configure a URL e a API Key abaixo.",
+            text="Cole apenas o link da Dashboard. O ALAHA Program vai se identificar e conectar automaticamente.",
             font=ctk.CTkFont(size=11),
             text_color="#888888",
             wraplength=560,
@@ -101,26 +101,9 @@ class MainWindow:
         if dashboard_url:
             self._dashboard_entry.insert(0, dashboard_url)
 
-        ctk.CTkLabel(
-            config_frame,
-            text="API Key",
-            font=ctk.CTkFont(size=11),
-            text_color="gray",
-        ).pack(anchor="w", padx=16, pady=(0, 2))
-
-        self._api_key_entry = ctk.CTkEntry(
-            config_frame,
-            placeholder_text="Cole a API Key gerada no Dashboard",
-            show="•",
-        )
-        self._api_key_entry.pack(fill="x", padx=16, pady=(0, 12))
-        api_key = cfg.get_api_key()
-        if api_key:
-            self._api_key_entry.insert(0, api_key)
-
         ctk.CTkButton(
             config_frame,
-            text="Salvar e Reconectar",
+            text="Salvar e Conectar",
             height=40,
             command=self._save_and_reconnect,
         ).pack(fill="x", padx=16, pady=(0, 16))
@@ -163,34 +146,19 @@ class MainWindow:
         self._log_box.pack(fill="both", padx=24, pady=(0, 20), expand=True)
 
     def _copy_id(self) -> None:
-        self._snowflake_id = self._snowflake_entry.get().strip()
         self.root.clipboard_clear()
         self.root.clipboard_append(self._snowflake_id)
         log.info("SnowflakeID copiado para a area de transferencia")
 
     def _save_and_reconnect(self) -> None:
-        snowflake_id = self._snowflake_entry.get().strip()
         dashboard_url = self._dashboard_entry.get().strip()
-        api_key = self._api_key_entry.get().strip()
-
-        if not snowflake_id:
-            log.warning("Informe o SnowflakeID gerado no Dashboard")
-            return
 
         if not self._is_valid_dashboard_url(dashboard_url):
             log.warning("Dashboard URL invalida. Use http://, https://, ws:// ou wss://")
             return
-
-        if not api_key:
-            log.warning("Informe a API Key da maquina")
-            return
-
-        self._snowflake_id = snowflake_id
-        cfg.set_snowflake_id(snowflake_id)
         cfg.set_dashboard_url(dashboard_url)
-        cfg.set_api_key(api_key)
         try:
-            self._on_reconnect(snowflake_id, dashboard_url, api_key)
+            self._on_reconnect(self._snowflake_id, dashboard_url)
             log.info("Configuracao salva. Reconectando ao Dashboard...")
         except Exception as e:
             log.error(f"Falha ao solicitar reconexao: {e}")

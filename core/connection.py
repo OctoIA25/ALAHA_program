@@ -1,7 +1,7 @@
 import asyncio
 import json
 from typing import Optional, Callable
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, urlparse
 
 import websockets
 
@@ -27,7 +27,6 @@ class ConnectionClient:
         self._status = "offline"
         self._stop_requested = False
         self._dashboard_url = cfg.get_dashboard_url()
-        self._api_key = cfg.get_api_key()
 
     @property
     def status(self) -> str:
@@ -48,13 +47,11 @@ class ConnectionClient:
     def set_on_status_change(self, callback: Callable) -> None:
         self._on_status_change = callback
 
-    def update_settings(self, snowflake_id: str, dashboard_url: str, api_key: str) -> None:
+    def update_settings(self, snowflake_id: str, dashboard_url: str) -> None:
         self.agent_id = snowflake_id.strip()
         self._dashboard_url = dashboard_url.strip()
-        self._api_key = api_key.strip()
         cfg.set_snowflake_id(self.agent_id)
         cfg.set_dashboard_url(self._dashboard_url)
-        cfg.set_api_key(self._api_key)
 
     def _build_ws_url(self) -> str:
         parsed = urlparse(self._dashboard_url.strip())
@@ -62,12 +59,11 @@ class ConnectionClient:
             raise ValueError("Dashboard URL inválida")
 
         scheme = "wss" if parsed.scheme in {"https", "wss"} else "ws"
-        query = urlencode({"key": self._api_key})
-        return f"{scheme}://{parsed.netloc}/ws/agent/{quote(self.agent_id)}/?{query}"
+        return f"{scheme}://{parsed.netloc}/ws/agent/{quote(self.agent_id)}/"
 
     async def _run_forever(self) -> None:
         while not self._stop_requested:
-            if not self.agent_id or not self._dashboard_url or not self._api_key:
+            if not self.agent_id or not self._dashboard_url:
                 self._set_status("waiting_config")
                 await asyncio.sleep(1)
                 continue
@@ -118,8 +114,8 @@ class ConnectionClient:
         if not self._runner_task or self._runner_task.done():
             self._runner_task = asyncio.create_task(self._run_forever())
 
-    async def reconnect(self, snowflake_id: str, dashboard_url: str, api_key: str) -> None:
-        self.update_settings(snowflake_id, dashboard_url, api_key)
+    async def reconnect(self, snowflake_id: str, dashboard_url: str) -> None:
+        self.update_settings(snowflake_id, dashboard_url)
         if self.ws:
             await self.ws.close()
         if not self._runner_task or self._runner_task.done():
