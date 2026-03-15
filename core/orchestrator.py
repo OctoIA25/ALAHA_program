@@ -1,4 +1,5 @@
 import asyncio
+import sys
 import time
 from typing import Optional
 
@@ -43,7 +44,7 @@ ACTION_MAP: dict[str, ActionExecutor] = {
     "maximize_window": MaximizeWindowAction(),
 }
 
-SYSTEM_PROMPT = """You are ALAHA, an AI agent that controls a Windows computer.
+_SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer.
 You receive an instruction from the user and must return a JSON array of actions to execute on the computer.
 
 Available action types:
@@ -55,7 +56,7 @@ Available action types:
 - drag: {from_x, from_y, to_x, to_y}
 - scroll: {x, y, direction, amount}
 - type: {text}
-- key: {key} - keys: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1-f12, win, etc.
+- key: {key} - keys: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, f1-f12, win, super, etc.
 - hotkey: {keys[]} - example: ["ctrl", "c"] for copy, ["alt", "f4"] to close window
 - key_down: {key}
 - key_up: {key}
@@ -64,8 +65,9 @@ Available action types:
 - focus_window: {title}
 - close_window: {title}
 - maximize_window: {title}
+"""
 
-IMPORTANT TIPS FOR WINDOWS:
+_SYSTEM_PROMPT_WINDOWS = _SYSTEM_PROMPT_COMMON + """IMPORTANT TIPS FOR WINDOWS:
 1. To open ANY app reliably, use the Windows Start Menu search:
    - Press "win" key to open Start Menu
    - Type the app name (e.g., "whatsapp", "chrome", "notepad")
@@ -99,6 +101,31 @@ Respond ONLY with a JSON array of action objects. Example to open WhatsApp and s
 ]
 ```
 """
+
+_SYSTEM_PROMPT_LINUX = _SYSTEM_PROMPT_COMMON + """IMPORTANT TIPS FOR LINUX:
+1. To open ANY app reliably, use run_command with the app's binary name, e.g.:
+   - {"type": "run_command", "command": "google-chrome &"}
+   - {"type": "run_command", "command": "gedit &"}
+   - open_app also works for common apps.
+
+2. To bring a window to front, use focus_window with the window title (requires xdotool or wmctrl).
+
+3. Use hotkey ["super"] or ["ctrl", "alt", "t"] to open a terminal.
+
+4. Use run_command for any shell operation (create files, move/rename, etc.).
+
+Respond ONLY with a JSON array of action objects. Example to open a terminal and run a command:
+```json
+[
+  {"type": "hotkey", "keys": ["ctrl", "alt", "t"]},
+  {"type": "wait", "ms": 1000},
+  {"type": "type", "text": "ls -la"},
+  {"type": "key", "key": "enter"}
+]
+```
+"""
+
+SYSTEM_PROMPT = _SYSTEM_PROMPT_LINUX if sys.platform.startswith("linux") else _SYSTEM_PROMPT_WINDOWS
 
 
 class Orchestrator:

@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import os
+import platform
 from typing import Callable
 
 import customtkinter as ctk
@@ -109,10 +110,11 @@ class MainWindow:
         autostart_frame = ctk.CTkFrame(self.root, fg_color="transparent")
         autostart_frame.pack(fill="x", padx=24, pady=(4, 0))
 
+        _autostart_label = "Iniciar com o sistema" if sys.platform.startswith("linux") else "Iniciar com o Windows"
         self._autostart_var = ctk.BooleanVar(value=cfg.get_autostart())
         ctk.CTkCheckBox(
             autostart_frame,
-            text="Iniciar com o Windows",
+            text=_autostart_label,
             variable=self._autostart_var,
             command=self._toggle_autostart,
             font=ctk.CTkFont(size=12),
@@ -136,7 +138,10 @@ class MainWindow:
     def _toggle_autostart(self) -> None:
         enabled = self._autostart_var.get()
         cfg.set_autostart(enabled)
-        self._setup_windows_autostart(enabled)
+        if sys.platform.startswith("linux"):
+            self._setup_linux_autostart(enabled)
+        else:
+            self._setup_windows_autostart(enabled)
 
     def _setup_windows_autostart(self, enabled: bool) -> None:
         try:
@@ -154,6 +159,32 @@ class MainWindow:
                 except FileNotFoundError:
                     pass
             winreg.CloseKey(key)
+        except Exception as e:
+            log.warning(f"Failed to set autostart: {e}")
+
+    def _setup_linux_autostart(self, enabled: bool) -> None:
+        try:
+            autostart_dir = os.path.expanduser("~/.config/autostart")
+            os.makedirs(autostart_dir, exist_ok=True)
+            desktop_file = os.path.join(autostart_dir, "alaha-program.desktop")
+            if enabled:
+                main_py = os.path.abspath("main.py")
+                content = (
+                    "[Desktop Entry]\n"
+                    "Type=Application\n"
+                    "Name=ALAHA Program\n"
+                    f"Exec={sys.executable} {main_py}\n"
+                    "Hidden=false\n"
+                    "NoDisplay=false\n"
+                    "X-GNOME-Autostart-enabled=true\n"
+                )
+                with open(desktop_file, "w") as f:
+                    f.write(content)
+                log.info("Autostart enabled via ~/.config/autostart")
+            else:
+                if os.path.exists(desktop_file):
+                    os.remove(desktop_file)
+                    log.info("Autostart removed from ~/.config/autostart")
         except Exception as e:
             log.warning(f"Failed to set autostart: {e}")
 

@@ -2,7 +2,8 @@ import base64
 import io
 from typing import Optional
 
-from PIL import ImageGrab, ImageDraw
+import mss
+from PIL import Image, ImageDraw
 
 from core.logger import get_logger
 
@@ -17,8 +18,13 @@ def capture_screenshot(
     radius: int = 30,
 ) -> str:
     try:
-        img = ImageGrab.grab()
-        original_w, original_h = img.size
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            original_w = monitor["width"]
+            original_h = monitor["height"]
+            raw = sct.grab(monitor)
+            img = Image.frombytes("RGB", (raw.width, raw.height), raw.rgb)
+
         img = img.resize(TARGET_SIZE)
 
         if highlight_x is not None and highlight_y is not None:

@@ -34,6 +34,16 @@ fi
 
 echo -e " ${GREEN}✓${NC} Python encontrado: $(python3 --version)"
 
+# Instalar dependências de sistema (window management + screenshot)
+if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+    echo -e " ${GREEN}✓${NC} Instalando dependências de sistema (xdotool, wmctrl, scrot)..."
+    sudo apt-get install -y --no-install-recommends xdotool wmctrl scrot python3-tk python3-dev 2>/dev/null || true
+elif command -v dnf &>/dev/null && command -v sudo &>/dev/null; then
+    sudo dnf install -y xdotool wmctrl scrot python3-tkinter 2>/dev/null || true
+elif command -v pacman &>/dev/null && command -v sudo &>/dev/null; then
+    sudo pacman -S --noconfirm xdotool wmctrl scrot tk 2>/dev/null || true
+fi
+
 # Criar diretório
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
@@ -89,19 +99,23 @@ fi
 
 if ! python3 -c "import tkinter" >/dev/null 2>&1; then
     echo "Dependência de sistema ausente: tkinter"
-    if command -v apt-get &>/dev/null; then
-        if command -v sudo &>/dev/null; then
-            echo "Instalando python3-tk/python3-dev via apt..."
-            sudo apt-get update
-            sudo apt-get install -y python3-tk python3-dev
-        else
-            echo "Rode como root para instalar: apt-get install -y python3-tk python3-dev"
-            exit 1
-        fi
+    if command -v apt-get &>/dev/null && command -v sudo &>/dev/null; then
+        echo "Instalando python3-tk/python3-dev via apt..."
+        sudo apt-get update -qq
+        sudo apt-get install -y python3-tk python3-dev xdotool wmctrl scrot
+    elif command -v dnf &>/dev/null && command -v sudo &>/dev/null; then
+        sudo dnf install -y python3-tkinter xdotool wmctrl scrot
+    elif command -v pacman &>/dev/null && command -v sudo &>/dev/null; then
+        sudo pacman -S --noconfirm tk xdotool wmctrl scrot
     else
         echo "Instale manualmente o pacote tkinter para sua distro e tente novamente."
         exit 1
     fi
+fi
+
+if ! command -v xdotool &>/dev/null && ! command -v wmctrl &>/dev/null; then
+    echo "Aviso: xdotool/wmctrl não encontrados. Ações de janela podem não funcionar."
+    echo "Instale com: sudo apt install xdotool"
 fi
 
 if [ ! -d "venv" ]; then
