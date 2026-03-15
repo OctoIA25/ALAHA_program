@@ -71,36 +71,56 @@ start /min "" venv\Scripts\pythonw.exe main.py
 
 ## 🐧 Instalação — Linux
 
-### Opção 1: Setup Completo
+### Opção 1: One-liner (mais rápido)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
+```
+
+Ou com `wget`:
+
+```bash
+wget -qO- https://raw.githubusercontent.com/seu-usuario/alaha-program/main/install.sh | bash
+```
+
+Isso irá:
+- ✅ Verificar Python
+- ✅ Clonar o repositório
+- ✅ Criar ambiente virtual
+- ✅ Instalar dependências
+- ✅ Criar comando `alaha`
+- ✅ Iniciar o programa
+
+### Opção 2: Git Clone (manual)
+
+```bash
+# Clone o repositório
+git clone https://github.com/seu-usuario/alaha-program.git ~/.local/share/alaha-program
+cd ~/.local/share/alaha-program
+
+# Crie o ambiente virtual e instale
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m playwright install chromium
+
+# Execute
+python main.py
+```
+
+### Opção 3: Setup Completo (com systemd)
 
 ```bash
 bash installer/setup_linux.sh
 ```
 
-Isso irá:
-- ✅ Verificar Python
-- ✅ Criar ambiente virtual
-- ✅ Instalar dependências
-- ✅ Criar comandos: `alaha-program`, `alaha-program-start`, `alaha-program-stop`
-- ✅ Criar serviço systemd
-
-### Opção 2: Manual
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
+Isso cria comandos `alaha-program`, `alaha-program-start`, `alaha-program-stop` e serviço systemd.
 
 ### Executar em Segundo Plano (Linux)
 
 ```bash
-# Usando o comando gerado:
-alaha-program-start
-
-# Ou usando nohup:
-nohup venv/bin/python main.py &
+# Usando nohup:
+nohup alaha &
 
 # Ou usando systemd:
 systemctl --user start alaha-program
@@ -122,8 +142,6 @@ systemctl --user stop alaha-program
 ### Parar o Programa
 
 ```bash
-alaha-program-stop
-# ou
 pkill -f "python.*main.py"
 ```
 
@@ -225,6 +243,7 @@ alaha-program/
 ├── config.json              # Gerado na 1ª execução (snowflake_id)
 ├── requirements.txt
 ├── README.md
+├── install.sh               # Instalador one-liner para Linux
 ├── core/
 │   ├── identity.py          # SnowflakeID
 │   ├── config.py            # Configuração local mínima
