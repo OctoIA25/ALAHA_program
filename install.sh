@@ -63,24 +63,69 @@ source venv/bin/activate
 pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 
-# Instalar Playwright
-echo -e " ${GREEN}✓${NC} Instalando Playwright..."
-python -m playwright install chromium 2>/dev/null || true
-
 # Criar comando global
 mkdir -p "$BIN_DIR"
 
 cat > "$BIN_DIR/alaha" << 'EOF'
 #!/usr/bin/env bash
-cd "${HOME}/.local/share/alaha-program"
+set -e
+
+INSTALL_DIR="${HOME}/.local/share/alaha-program"
+MARKER_FILE="${INSTALL_DIR}/.alaha_bootstrap_done"
+
+if [ ! -d "$INSTALL_DIR" ]; then
+    echo "Erro: diretório do ALAHA não encontrado em $INSTALL_DIR"
+    echo "Rode o instalador primeiro:"
+    echo "curl -fsSL https://raw.githubusercontent.com/OctoIA25/ALAHA_program/main/install.sh | bash"
+    exit 1
+fi
+
+cd "$INSTALL_DIR"
+
+if ! command -v python3 &>/dev/null; then
+    echo "Erro: python3 não encontrado."
+    exit 1
+fi
+
+if ! python3 -c "import tkinter" >/dev/null 2>&1; then
+    echo "Dependência de sistema ausente: tkinter"
+    if command -v apt-get &>/dev/null; then
+        if command -v sudo &>/dev/null; then
+            echo "Instalando python3-tk/python3-dev via apt..."
+            sudo apt-get update
+            sudo apt-get install -y python3-tk python3-dev
+        else
+            echo "Rode como root para instalar: apt-get install -y python3-tk python3-dev"
+            exit 1
+        fi
+    else
+        echo "Instale manualmente o pacote tkinter para sua distro e tente novamente."
+        exit 1
+    fi
+fi
+
+if [ ! -d "venv" ]; then
+    echo "Criando ambiente virtual..."
+    python3 -m venv venv
+fi
+
 source venv/bin/activate
-python main.py "$@"
+
+if [ ! -f "$MARKER_FILE" ] || [ requirements.txt -nt "$MARKER_FILE" ]; then
+    echo "Instalando/atualizando dependências Python..."
+    pip install --quiet --upgrade pip
+    pip install --quiet -r requirements.txt
+    touch "$MARKER_FILE"
+fi
+
+exec python main.py "$@"
 EOF
 chmod +x "$BIN_DIR/alaha"
 
 # Criar comando de atualização
 cat > "$BIN_DIR/alaha-update" << 'EOF'
 #!/usr/bin/env bash
+set -e
 echo "Atualizando ALAHA Program..."
 cd "${HOME}/.local/share/alaha-program"
 git pull

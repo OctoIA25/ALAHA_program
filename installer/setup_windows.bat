@@ -16,7 +16,7 @@ echo.
 :: -----------------------------------------------
 :: 1. Verificar se Python esta instalado
 :: -----------------------------------------------
-echo  [1/7] Verificando Python...
+echo  [1/6] Verificando Python...
 python --version >nul 2>&1
 if errorlevel 1 (
     echo.
@@ -41,7 +41,7 @@ echo  Diretorio: %ALAHA_DIR%
 :: 3. Criar ambiente virtual
 :: -----------------------------------------------
 echo.
-echo  [2/7] Criando ambiente virtual...
+echo  [2/6] Criando ambiente virtual...
 if exist venv (
     echo  Ambiente virtual ja existe, pulando...
 ) else (
@@ -57,11 +57,11 @@ if exist venv (
 :: 4. Ativar e instalar dependencias
 :: -----------------------------------------------
 echo.
-echo  [3/7] Ativando ambiente virtual...
+echo  [3/6] Ativando ambiente virtual...
 call venv\Scripts\activate.bat
 
 echo.
-echo  [4/7] Instalando dependencias (pode levar alguns minutos)...
+echo  [4/6] Instalando dependencias (pode levar alguns minutos)...
 python -m pip install --upgrade pip >nul 2>&1
 python -m pip install -r requirements.txt
 if errorlevel 1 (
@@ -73,22 +73,10 @@ if errorlevel 1 (
 echo  Dependencias instaladas com sucesso.
 
 :: -----------------------------------------------
-:: 5. Instalar Playwright (browser automation)
+:: 5. Build do executavel
 :: -----------------------------------------------
 echo.
-echo  [5/7] Instalando navegador Playwright (chromium)...
-python -m playwright install chromium >nul 2>&1
-if errorlevel 1 (
-    echo  AVISO: Playwright nao instalado.
-) else (
-    echo  Playwright chromium instalado.
-)
-
-:: -----------------------------------------------
-:: 6. Build do executavel
-:: -----------------------------------------------
-echo.
-echo  [6/7] Gerando executavel...
+echo  [5/6] Gerando executavel...
 python installer\build_executable.py
 if errorlevel 1 (
     echo  AVISO: Build do executavel falhou.
@@ -98,10 +86,10 @@ if errorlevel 1 (
 )
 
 :: -----------------------------------------------
-:: 7. Criar atalhos
+:: 6. Criar atalhos
 :: -----------------------------------------------
 echo.
-echo  [7/7] Criando atalhos...
+echo  [6/6] Criando atalhos...
 
 :: Criar pasta de dados no AppData
 if not exist "%APPDATA%\ALAHAProgram" mkdir "%APPDATA%\ALAHAProgram"

@@ -21,7 +21,7 @@ echo ""
 # -----------------------------------------------
 # 1. Verificar Python
 # -----------------------------------------------
-echo " [1/6] Verificando Python..."
+echo " [1/5] Verificando Python..."
 if ! command -v python3 &>/dev/null; then
     echo " ERRO: python3 nao encontrado."
     echo " Instale com: sudo apt install python3 python3-venv python3-pip"
@@ -34,7 +34,7 @@ echo " $PYVER encontrado."
 # 2. Criar diretorio de instalacao
 # -----------------------------------------------
 echo ""
-echo " [2/6] Preparando diretorio..."
+echo " [2/5] Preparando diretorio..."
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -59,7 +59,7 @@ cd "$INSTALL_DIR"
 # 3. Criar ambiente virtual
 # -----------------------------------------------
 echo ""
-echo " [3/6] Criando ambiente virtual..."
+echo " [3/5] Criando ambiente virtual..."
 if [ -d "venv" ]; then
     echo " Ambiente virtual ja existe, pulando..."
 else
@@ -70,26 +70,17 @@ fi
 # 4. Instalar dependencias
 # -----------------------------------------------
 echo ""
-echo " [4/6] Instalando dependencias..."
+echo " [4/5] Instalando dependencias..."
 source venv/bin/activate
 pip install --upgrade pip -q
 pip install -r requirements.txt
 echo " Dependencias instaladas."
 
 # -----------------------------------------------
-# 5. Instalar Playwright
+# 5. Criar atalho de execucao
 # -----------------------------------------------
 echo ""
-echo " [5/6] Instalando Playwright (chromium)..."
-python -m playwright install chromium 2>/dev/null || {
-    echo " AVISO: Playwright nao instalado. Acoes de browser nao funcionarao."
-}
-
-# -----------------------------------------------
-# 6. Criar atalho de execucao
-# -----------------------------------------------
-echo ""
-echo " [6/6] Criando comando de execucao..."
+echo " [5/5] Criando comando de execucao..."
 
 LAUNCHER="$HOME/.local/bin/alaha-program"
 mkdir -p "$HOME/.local/bin"

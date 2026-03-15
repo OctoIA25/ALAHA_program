@@ -11,7 +11,6 @@ ALLOWED_ACTIONS = {
     "wait", "move", "click", "double_click", "right_click", "scroll",
     "type", "key", "hotkey", "key_down", "key_up",
     "open_app", "run_command", "focus_window", "close_window", "maximize_window",
-    "browser_navigate", "browser_click", "browser_type", "browser_screenshot", "browser_scroll",
     "upload_file", "create_file", "read_file",
 }
 

@@ -73,22 +73,10 @@ if errorlevel 1 (
 echo  Dependencias instaladas com sucesso.
 
 :: -----------------------------------------------
-:: 5. Instalar Playwright (browser automation)
+:: 5. Primeira execucao
 :: -----------------------------------------------
 echo.
-echo  [5/6] Instalando navegador Playwright (chromium)...
-python -m playwright install chromium >nul 2>&1
-if errorlevel 1 (
-    echo  AVISO: Playwright nao instalado. Acoes de browser nao funcionarao.
-) else (
-    echo  Playwright chromium instalado.
-)
-
-:: -----------------------------------------------
-:: 6. Primeira execucao
-:: -----------------------------------------------
-echo.
-echo  [6/6] Executando ALAHA Program pela primeira vez...
+echo  [5/5] Executando ALAHA Program pela primeira vez...
 echo.
 echo  ==========================================
 echo   Instalacao concluida com sucesso!

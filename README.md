@@ -33,7 +33,6 @@ Isso irá:
 - ✅ Verificar Python
 - ✅ Criar ambiente virtual
 - ✅ Instalar dependências
-- ✅ Instalar Playwright
 - ✅ Gerar executável (.exe)
 - ✅ Criar scripts de execução
 
@@ -98,15 +97,18 @@ Isso irá:
 git clone https://github.com/OctoIA25/ALAHA_program.git ~/.local/share/alaha-program
 cd ~/.local/share/alaha-program
 
-# Crie o ambiente virtual e instale
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python -m playwright install chromium
+# Instale o comando global (uma vez)
+bash install.sh
 
-# Execute
-python main.py
+# Depois é só rodar:
+alaha
 ```
+
+No primeiro `alaha`, ele faz bootstrap automático:
+- ✅ Instala `python3-tk`/`python3-dev` (quando necessário, via `sudo apt`)
+- ✅ Cria `venv` se não existir
+- ✅ Instala/atualiza dependências Python
+- ✅ Inicia o ALAHA Program
 
 ### Opção 3: Setup Completo (com systemd)
 

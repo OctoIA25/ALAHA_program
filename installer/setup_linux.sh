@@ -27,7 +27,7 @@ echo ""
 # -----------------------------------------------
 # 1. Verificar Python
 # -----------------------------------------------
-echo -e " [1/6] ${YELLOW}Verificando Python...${NC}"
+echo -e " [1/5] ${YELLOW}Verificando Python...${NC}"
 if ! command -v python3 &>/dev/null; then
     echo -e " ${RED}ERRO: python3 nao encontrado.${NC}"
     echo " Instale com: sudo apt install python3 python3-venv python3-pip"
@@ -40,7 +40,7 @@ echo -e " ${GREEN}$PYVER encontrado.${NC}"
 # 2. Preparar diretorio de instalacao
 # -----------------------------------------------
 echo ""
-echo -e " [2/6] ${YELLOW}Preparando diretorio...${NC}"
+echo -e " [2/5] ${YELLOW}Preparando diretorio...${NC}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -63,7 +63,7 @@ cd "$INSTALL_DIR"
 # 3. Criar ambiente virtual
 # -----------------------------------------------
 echo ""
-echo -e " [3/6] ${YELLOW}Criando ambiente virtual...${NC}"
+echo -e " [3/5] ${YELLOW}Criando ambiente virtual...${NC}"
 if [ -d "venv" ]; then
     echo -e " ${GREEN}Ambiente virtual ja existe, pulando...${NC}"
 else
@@ -74,26 +74,17 @@ fi
 # 4. Instalar dependencias
 # -----------------------------------------------
 echo ""
-echo -e " [4/6] ${YELLOW}Instalando dependencias...${NC}"
+echo -e " [4/5] ${YELLOW}Instalando dependencias...${NC}"
 source venv/bin/activate
 pip install --upgrade pip -q
 pip install -r requirements.txt
 echo -e " ${GREEN}Dependencias instaladas.${NC}"
 
 # -----------------------------------------------
-# 5. Instalar Playwright
+# 5. Criar comandos e servico systemd
 # -----------------------------------------------
 echo ""
-echo -e " [5/6] ${YELLOW}Instalando Playwright (chromium)...${NC}"
-python -m playwright install chromium 2>/dev/null || {
-    echo -e " ${YELLOW}AVISO: Playwright nao instalado (opcional).${NC}"
-}
-
-# -----------------------------------------------
-# 6. Criar comandos e servico systemd
-# -----------------------------------------------
-echo ""
-echo -e " [6/6] ${YELLOW}Criando comandos e servico...${NC}"
+echo -e " [5/5] ${YELLOW}Criando comandos e servico...${NC}"
 
 # Criar diretorio de binarios do usuario
 mkdir -p "$HOME/.local/bin"
