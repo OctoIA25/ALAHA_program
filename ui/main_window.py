@@ -1,8 +1,6 @@
-import asyncio
-import sys
 import os
-import platform
-from typing import Callable, Optional
+import socket
+import sys
 
 import customtkinter as ctk
 
@@ -16,21 +14,14 @@ ctk.set_default_color_theme("blue")
 
 
 class MainWindow:
-    def __init__(
-        self,
-        snowflake_id: str,
-        dashboard_url: str = "",
-        api_key: str = "",
-        on_config_save: Optional[Callable] = None,
-    ):
+    def __init__(self, snowflake_id: str, ws_port: int):
         self._snowflake_id = snowflake_id
-        self._dashboard_url = dashboard_url
-        self._api_key = api_key
-        self._on_config_save = on_config_save
+        self._ws_port = ws_port
+        self._ip_address = self._get_local_ip()
 
         self.root = ctk.CTk()
         self.root.title("ALAHA Program")
-        self.root.geometry("500x620")
+        self.root.geometry("500x600")
         self.root.resizable(False, False)
 
         self._build_ui()
@@ -49,7 +40,7 @@ class MainWindow:
 
         ctk.CTkLabel(
             header,
-            text="Agente local — conecta ao ALAHA Dashboard",
+            text="Agente local — conecte pelo ALAHA Dashboard",
             font=ctk.CTkFont(size=12),
             text_color="gray",
         ).pack(anchor="w", pady=(2, 0))
@@ -87,56 +78,47 @@ class MainWindow:
 
         ctk.CTkLabel(
             self.root,
-            text="Cole este ID no ALAHA Dashboard para autorizar esta máquina.",
+            text="Use o SnowflakeID e o IP desta máquina no ALAHA Dashboard.",
             font=ctk.CTkFont(size=11),
             text_color="#888888",
         ).pack(padx=24, anchor="w", pady=(0, 4))
 
-        # Connection config card
-        conn_frame = ctk.CTkFrame(self.root)
-        conn_frame.pack(fill="x", padx=24, pady=(4, 4))
+        ctk.CTkLabel(
+            self.root,
+            text="Compartilhe também o IP abaixo ao cadastrar a máquina.",
+            font=ctk.CTkFont(size=11),
+            text_color="#888888",
+        ).pack(padx=24, anchor="w", pady=(0, 8))
+
+        ip_frame = ctk.CTkFrame(self.root)
+        ip_frame.pack(fill="x", padx=24, pady=(0, 4))
 
         ctk.CTkLabel(
-            conn_frame,
-            text="Configuração de Conexão",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="gray",
-        ).pack(anchor="w", padx=16, pady=(14, 6))
-
-        # URL row
-        url_row = ctk.CTkFrame(conn_frame, fg_color="transparent")
-        url_row.pack(fill="x", padx=16, pady=(0, 6))
-        ctk.CTkLabel(url_row, text="URL da Dashboard:", font=ctk.CTkFont(size=11), width=130, anchor="w").pack(side="left")
-        self._url_entry = ctk.CTkEntry(
-            url_row,
-            placeholder_text="https://sua-dashboard.com",
+            ip_frame,
+            text="IP desta máquina",
             font=ctk.CTkFont(size=11),
-        )
-        self._url_entry.pack(side="left", fill="x", expand=True)
-        if self._dashboard_url:
-            self._url_entry.insert(0, self._dashboard_url)
+            text_color="gray",
+        ).pack(anchor="w", padx=16, pady=(14, 2))
 
-        # API key row
-        key_row = ctk.CTkFrame(conn_frame, fg_color="transparent")
-        key_row.pack(fill="x", padx=16, pady=(0, 14))
-        ctk.CTkLabel(key_row, text="API Key:", font=ctk.CTkFont(size=11), width=130, anchor="w").pack(side="left")
-        self._key_entry = ctk.CTkEntry(
-            key_row,
-            placeholder_text="alaha_...",
-            font=ctk.CTkFont(size=11, family="Consolas"),
-            show="*",
+        ip_row = ctk.CTkFrame(ip_frame, fg_color="transparent")
+        ip_row.pack(fill="x", padx=16, pady=(0, 14))
+
+        self._ip_label = ctk.CTkLabel(
+            ip_row,
+            text=self._ip_address,
+            font=ctk.CTkFont(size=16, weight="bold", family="Consolas"),
+            text_color="#44cc88",
         )
-        self._key_entry.pack(side="left", fill="x", expand=True)
-        if self._api_key:
-            self._key_entry.insert(0, self._api_key)
+        self._ip_label.pack(side="left")
 
         ctk.CTkButton(
-            conn_frame,
-            text="Salvar e Reconectar",
-            height=32,
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._save_config,
-        ).pack(fill="x", padx=16, pady=(0, 14))
+            ip_row,
+            text="Copiar",
+            width=70,
+            height=28,
+            font=ctk.CTkFont(size=11),
+            command=self._copy_ip,
+        ).pack(side="right")
 
         # Status card
         status_frame = ctk.CTkFrame(self.root)
@@ -153,6 +135,11 @@ class MainWindow:
         ctk.CTkLabel(row_llm, text="LLM:", font=ctk.CTkFont(weight="bold")).pack(side="left")
         self._llm_label = ctk.CTkLabel(row_llm, text="—", text_color="gray")
         self._llm_label.pack(side="left", padx=10)
+
+        row_port = ctk.CTkFrame(status_frame, fg_color="transparent")
+        row_port.pack(fill="x", padx=16, pady=(0, 14))
+        ctk.CTkLabel(row_port, text="Porta:", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        ctk.CTkLabel(row_port, text=str(self._ws_port), text_color="#aaaaaa").pack(side="left", padx=10)
 
         # Autostart
         autostart_frame = ctk.CTkFrame(self.root, fg_color="transparent")
@@ -182,6 +169,24 @@ class MainWindow:
         self.root.clipboard_clear()
         self.root.clipboard_append(self._snowflake_id)
         log.info("SnowflakeID copiado para a area de transferencia")
+
+    def _copy_ip(self) -> None:
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self._ip_address)
+        log.info("IP da maquina copiado para a area de transferencia")
+
+    def _get_local_ip(self) -> str:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.connect(("8.8.8.8", 80))
+            ip = sock.getsockname()[0]
+            sock.close()
+            return ip
+        except Exception:
+            try:
+                return socket.gethostbyname(socket.gethostname())
+            except Exception:
+                return "127.0.0.1"
 
     def _toggle_autostart(self) -> None:
         enabled = self._autostart_var.get()
@@ -236,24 +241,11 @@ class MainWindow:
         except Exception as e:
             log.warning(f"Failed to set autostart: {e}")
 
-    def _save_config(self) -> None:
-        url = self._url_entry.get().strip()
-        key = self._key_entry.get().strip()
-        if not url or not key:
-            log.warning("URL da Dashboard e API Key sao obrigatorios")
-            return
-        log.info(f"Salvando configuracao: {url}")
-        if self._on_config_save:
-            self._on_config_save(url, key)
-
     def update_status(self, status: str) -> None:
         status_map = {
-            "connecting": ("Conectando...", "#ffaa00"),
-            "reconnecting": ("Reconectando...", "#ffaa00"),
-            "not_configured": ("Nao configurado", "#ff8800"),
+            "waiting": ("Aguardando conexao...", "#ffaa00"),
             "online": ("Conectado", "#22cc44"),
             "offline": ("Desconectado", "#ff4444"),
-            "waiting": ("Aguardando conexao...", "#ffaa00"),
             "error": ("Erro", "#ff4444"),
         }
         display, color = status_map.get(status, (status.capitalize(), "gray"))

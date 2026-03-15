@@ -7,25 +7,22 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.logger import get_logger
 from core.identity import get_or_create_snowflake_id
-from core.connection import ConnectionClient
+from core.connection import ConnectionServer, DEFAULT_PORT
 from core.dispatcher import Dispatcher
 from core.orchestrator import Orchestrator
-from core import config as cfg
 from llm.client import LLMClient
 from ui.main_window import MainWindow
 
 log = get_logger("main")
+
+WS_PORT = DEFAULT_PORT
 
 
 class ALAHAProgram:
     def __init__(self):
         self.snowflake_id = get_or_create_snowflake_id()
         self.loop = asyncio.new_event_loop()
-
-        dashboard_url = cfg.get_dashboard_url()
-        api_key = cfg.get_api_key()
-
-        self.connection = ConnectionClient(self.snowflake_id, dashboard_url, api_key)
+        self.connection = ConnectionServer(self.snowflake_id, WS_PORT)
         self.llm = LLMClient()
         self.dispatcher = Dispatcher()
         self.orchestrator = Orchestrator(self.connection, self.llm)
@@ -37,9 +34,7 @@ class ALAHAProgram:
 
         self.window = MainWindow(
             snowflake_id=self.snowflake_id,
-            dashboard_url=dashboard_url,
-            api_key=api_key,
-            on_config_save=self._on_config_save,
+            ws_port=WS_PORT,
         )
 
     def _setup_dispatcher(self) -> None:
@@ -76,20 +71,7 @@ class ALAHAProgram:
     def _on_status_change(self, status: str) -> None:
         self.window.update_status(status)
 
-    def _on_config_save(self, dashboard_url: str, api_key: str) -> None:
-        """Called by UI when the user saves a new URL or API key."""
-        cfg.set_dashboard_url(dashboard_url)
-        cfg.set_api_key(api_key)
-        self.connection.update_config(dashboard_url, api_key)
-        log.info("Configuration updated. Reconnecting...")
-        # Trigger reconnect by stopping and restarting connection loop
-        asyncio.run_coroutine_threadsafe(self._restart_connection(), self.loop)
-
-    async def _restart_connection(self) -> None:
-        await self.connection.stop()
-        await self.connection.start()
-
-    async def _start_client(self) -> None:
+    async def _start_server(self) -> None:
         await self.connection.start()
 
     async def _shutdown(self) -> None:
@@ -102,11 +84,12 @@ class ALAHAProgram:
 
     def run(self) -> None:
         log.info(f"ALAHA Program starting | ID: {self.snowflake_id}")
+        log.info(f"WebSocket server on port {WS_PORT}")
 
         async_thread = threading.Thread(target=self._run_async_loop, daemon=True)
         async_thread.start()
 
-        asyncio.run_coroutine_threadsafe(self._start_client(), self.loop)
+        asyncio.run_coroutine_threadsafe(self._start_server(), self.loop)
 
         try:
             self.window.run()
