@@ -26,6 +26,13 @@ def get_snowflake_id() -> Optional[str]:
     return cfg.get("snowflake_id")
 
 
+def set_snowflake_id(snowflake_id: str) -> None:
+    cfg = _load_raw()
+    cfg["snowflake_id"] = snowflake_id.strip()
+    _save_raw(cfg)
+    log.info(f"Snowflake ID set to {snowflake_id.strip()}")
+
+
 def get_dashboard_url() -> str:
     cfg = _load_raw()
     return cfg.get("dashboard_url", "")
@@ -48,18 +55,6 @@ def set_api_key(key: str) -> None:
     cfg["api_key"] = key.strip()
     _save_raw(cfg)
     log.info("API key updated")
-
-
-def get_connection_endpoint() -> str:
-    cfg = _load_raw()
-    return cfg.get("connection_endpoint", "")
-
-
-def set_connection_endpoint(endpoint: str) -> None:
-    cfg = _load_raw()
-    cfg["connection_endpoint"] = endpoint.strip()
-    _save_raw(cfg)
-    log.info(f"Connection endpoint set to {endpoint.strip()}")
 
 
 def get_autostart() -> bool:

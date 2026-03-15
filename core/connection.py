@@ -48,9 +48,11 @@ class ConnectionClient:
     def set_on_status_change(self, callback: Callable) -> None:
         self._on_status_change = callback
 
-    def update_settings(self, dashboard_url: str, api_key: str) -> None:
+    def update_settings(self, snowflake_id: str, dashboard_url: str, api_key: str) -> None:
+        self.agent_id = snowflake_id.strip()
         self._dashboard_url = dashboard_url.strip()
         self._api_key = api_key.strip()
+        cfg.set_snowflake_id(self.agent_id)
         cfg.set_dashboard_url(self._dashboard_url)
         cfg.set_api_key(self._api_key)
 
@@ -65,7 +67,7 @@ class ConnectionClient:
 
     async def _run_forever(self) -> None:
         while not self._stop_requested:
-            if not self._dashboard_url or not self._api_key:
+            if not self.agent_id or not self._dashboard_url or not self._api_key:
                 self._set_status("waiting_config")
                 await asyncio.sleep(1)
                 continue
@@ -116,8 +118,8 @@ class ConnectionClient:
         if not self._runner_task or self._runner_task.done():
             self._runner_task = asyncio.create_task(self._run_forever())
 
-    async def reconnect(self, dashboard_url: str, api_key: str) -> None:
-        self.update_settings(dashboard_url, api_key)
+    async def reconnect(self, snowflake_id: str, dashboard_url: str, api_key: str) -> None:
+        self.update_settings(snowflake_id, dashboard_url, api_key)
         if self.ws:
             await self.ws.close()
         if not self._runner_task or self._runner_task.done():
@@ -146,3 +148,6 @@ class ConnectionClient:
             await self.ws.send(json.dumps(data))
         else:
             log.warning("Cannot send: no Dashboard connected")
+
+
+ConnectionServer = ConnectionClient

@@ -69,9 +69,10 @@ class ALAHAProgram:
     def _on_status_change(self, status: str) -> None:
         self.window.update_status(status)
 
-    def _request_reconnect(self, dashboard_url: str, api_key: str) -> None:
+    def _request_reconnect(self, snowflake_id: str, dashboard_url: str, api_key: str) -> None:
+        self.snowflake_id = snowflake_id
         asyncio.run_coroutine_threadsafe(
-            self.connection.reconnect(dashboard_url, api_key),
+            self.connection.reconnect(snowflake_id, dashboard_url, api_key),
             self.loop,
         )
 
