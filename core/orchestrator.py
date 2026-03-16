@@ -48,46 +48,59 @@ ACTION_MAP: dict[str, ActionExecutor] = {
     "maximize_window": MaximizeWindowAction(),
 }
 
-_VISION_SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer. You can SEE the current state of the screen.
+_VISION_SYSTEM_PROMPT_COMMON = """You are ALAHA, an advanced, highly autonomous AI agent that controls a computer.
+You have FULL visual access to the screen. Your goal is to complete high-level user requests seamlessly.
 
 Each turn you receive a screenshot and must:
-1. THINK: describe what you see and what you plan to do next
-2. ACT: choose exactly ONE action to execute
+1. THINK: Analyze the screen carefully. What changed? Where are we in the plan? What is the exact next step?
+2. ACT: Choose EXACTLY ONE action to execute.
 
-RESPONSE FORMAT — return ONLY a JSON object:
+RESPONSE FORMAT (JSON ONLY):
 {
-  "thinking": "I can see X. The task requires Y. I will do Z next.",
+  "thinking": "I see the desktop. I need to send a WhatsApp message. I will open Chrome first.",
   "action": {"type": "action_type", ...params}
 }
 
 To signal task completion:
-{"done": true, "message": "brief description of what was accomplished"}
+{"done": true, "message": "I have successfully sent the message to your fiancee."}
 
-Available actions:
-- {"type": "wait", "ms": 500}
-- {"type": "navigate", "url": "https://web.whatsapp.com"}  ← USE THIS to open any website (reliable, no clicking needed)
-- {"type": "move", "x": 100, "y": 200}
+AVAILABLE ACTIONS:
+- {"type": "navigate", "url": "https://web.whatsapp.com"}  ← BEST WAY to open any website. Uses Ctrl+L.
+- {"type": "open_app", "app": "chrome"} ← Use this to open browsers or basic apps
 - {"type": "click", "x": 100, "y": 200}
+- {"type": "type", "text": "hello"}
+- {"type": "key", "key": "enter"}
+- {"type": "wait", "ms": 2000}
+- {"type": "hotkey", "keys": ["ctrl", "c"]}
+- {"type": "move", "x": 100, "y": 200}
 - {"type": "double_click", "x": 100, "y": 200}
 - {"type": "right_click", "x": 100, "y": 200}
 - {"type": "drag", "from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100}
 - {"type": "scroll", "x": 100, "y": 200, "direction": "down", "amount": 3}
-- {"type": "type", "text": "hello"}
-- {"type": "key", "key": "enter"}
-- {"type": "hotkey", "keys": ["ctrl", "c"]}
-- {"type": "open_app", "app": "google-chrome"}
 - {"type": "run_command", "command": "dir"}
 - {"type": "focus_window", "title": "Chrome"}
 - {"type": "close_window", "title": "Notepad"}
-- {"type": "maximize_window", "title": "Chrome"}
+
+CRITICAL PLAYBOOKS & HEURISTICS (Follow these to succeed):
+
+1. WEB BROWSING & WHATSAPP:
+   - If asked to do something on the web or WhatsApp, immediately use `open_app` with "chrome" or "edge".
+   - Once the browser is open, DO NOT click the address bar. Immediately use the `navigate` action with the exact URL (e.g., "https://web.whatsapp.com" or "https://google.com").
+   - After navigating, ALWAYS use `wait` (ms: 3000 to 5000) to let the page load before trying to click anything.
+   - For WhatsApp: Once loaded, find the "Search or start new chat" box on the left, click it, use `type` for the contact name, use `wait` (ms: 1000), use `key` "enter". Then type the message and press enter.
+
+2. AVOIDING FAILURE & GETTING UNSTUCK:
+   - Pixel Precision: Use the EXACT pixel coordinates you see in the screenshot. They match the real screen 1:1.
+   - Wait for UI: UIs take time to render. If you just clicked a button or opened an app, your next action should usually be a `wait` (ms: 1000-3000).
+   - Recovery: If the screenshot hasn't changed after your last action, your click probably missed or the app is slow. DO NOT repeat the exact same click. Try clicking a different part of the button, or use a keyboard shortcut (like Tab or Enter) instead.
+
+3. PROACTIVITY:
+   - Break down vague requests like "message my fiancee" into steps: Open Chrome -> Navigate to WhatsApp -> Wait -> Click Search -> Type name -> Enter -> Type message -> Enter.
+   - Do not ask the user for help unless absolutely stuck. Assume you have the authority to complete the task.
 
 RULES:
-- PREFER "navigate" over clicking the address bar — it's always reliable
-- Use the EXACT pixel coordinates you see in the screenshot — they match the real screen 1:1
-- Always fill the "thinking" field with your reasoning before choosing the action
-- If a previous action failed or nothing changed, try a completely different approach
-- Use {"type": "wait", "ms": 2000} after opening apps or navigating to URLs
-- When the task is fully complete, return the done signal
+- Return ONLY valid JSON.
+- Always explain your logical step in "thinking".
 """
 
 _SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer.
@@ -217,6 +230,7 @@ class Orchestrator:
         log.info(f"Vision loop started: {instruction[:80]}")
         action_history: list[dict] = []
         stuck_count = 0
+        consecutive_errors = 0
         last_action_key: Optional[str] = None
 
         try:
@@ -226,7 +240,7 @@ class Orchestrator:
                     await self._send_error(session_id, step, "Failed to capture screenshot")
                     return
 
-                messages = self._build_vision_messages(instruction, action_history, step, stuck_count)
+                messages = self._build_vision_messages(instruction, action_history, step, stuck_count, consecutive_errors)
                 llm_response = await self.llm.chat_with_vision(messages, screenshot)
                 result = parse_single_action(llm_response)
 
@@ -262,6 +276,7 @@ class Orchestrator:
                 if not executor:
                     log.warning(f"Unknown action type at step {step}: {action_type}")
                     action_history.append({"action": result, "success": False, "error": f"Unknown action: {action_type}"})
+                    consecutive_errors += 1
                     continue
 
                 current_action_key = json.dumps(result, sort_keys=True)
@@ -282,8 +297,13 @@ class Orchestrator:
                     success = exec_result.get("success", False)
                     error_msg = exec_result.get("message", "") if not success else ""
                     action_history.append({"action": result, "success": success, "error": error_msg, "thinking": thinking})
+                    if not success:
+                        consecutive_errors += 1
+                    else:
+                        consecutive_errors = 0
                 except Exception as e:
                     action_history.append({"action": result, "success": False, "error": str(e), "thinking": thinking})
+                    consecutive_errors += 1
 
                 await asyncio.sleep(SCREENSHOT_SETTLE_MS / 1000)
 
@@ -374,7 +394,7 @@ class Orchestrator:
         })
         log.info(f"All {total} actions completed for session {session_id}")
 
-    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int, stuck_count: int = 0) -> list[dict]:
+    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int, stuck_count: int = 0, consecutive_errors: int = 0) -> list[dict]:
         history_text = ""
         if action_history:
             lines = []
@@ -385,24 +405,32 @@ class Orchestrator:
                 lines.append(f"  {i + 1}. {action_str} -> {status}{thinking_hint}")
             history_text = "\nActions executed so far:\n" + "\n".join(lines)
 
-        stuck_warning = ""
-        if stuck_count >= 3:
-            stuck_warning = (
-                "\n\n⚠️ WARNING: You have repeated the same action multiple times with no progress. "
-                "Look at the screenshot carefully and choose a COMPLETELY DIFFERENT approach."
+        warnings = []
+        if stuck_count >= 2:
+            warnings.append(
+                f"⚠️ STUCK WARNING: You repeated the exact same action {stuck_count} times with no progress. "
+                "Look at the screenshot carefully. Your click might have missed or the app is not responding. "
+                "CHOOSE A DIFFERENT APPROACH (e.g. use keyboard navigation, or click a different area)."
             )
+        if consecutive_errors > 0:
+            warnings.append(
+                f"⚠️ ERROR WARNING: The last {consecutive_errors} actions FAILED. Read the error messages in the history. "
+                "Correct your parameters or try a different action type."
+            )
+
+        warning_text = "\n\n" + "\n".join(warnings) if warnings else ""
 
         user_text = (
             f"Task: {instruction}\n"
             f"Current step: {step + 1}/{MAX_VISION_STEPS}"
             f"{history_text}"
-            f"{stuck_warning}\n\n"
+            f"{warning_text}\n\n"
             'Look at the screenshot. Think carefully about what you see, then return your response as:\n'
             '{"thinking": "what I see and what I will do", "action": {...}}\n'
             'Or {"done": true, "message": "..."} if the task is complete.'
         )
         return [
-            {"role": "system", "content": VISION_SYSTEM_PROMPT},
+            {"role": "system", "content": _VISION_SYSTEM_PROMPT_COMMON},
             {"role": "user", "content": user_text},
         ]
 
