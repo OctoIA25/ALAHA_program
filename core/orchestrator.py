@@ -221,12 +221,14 @@ class Orchestrator:
                     return
 
                 if result.get("done"):
-                    log.info(f"Task complete at step {step + 1}: {result.get('message', '')}")
+                    done_message = result.get("message", "")
+                    log.info(f"Task complete at step {step + 1}: {done_message}")
                     await self.connection.send({
                         "type": "action_complete",
                         "session_id": session_id,
                         "success": True,
                         "total_actions": step,
+                        "message": done_message,
                     })
                     return
 
