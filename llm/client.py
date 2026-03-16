@@ -24,6 +24,33 @@ class LLMClient:
     def is_configured(self) -> bool:
         return all([self.api_key, self.base_url, self.model, self._http])
 
+    async def chat_with_vision(self, messages: list[dict], screenshot_b64: str, temperature: float = 0.2) -> str:
+        """Call LLM with vision: injects the screenshot into the last user message."""
+        if not self.is_configured:
+            raise RuntimeError("LLM client not configured")
+
+        enhanced = []
+        for i, msg in enumerate(messages):
+            if i == len(messages) - 1 and msg["role"] == "user":
+                text = msg["content"] if isinstance(msg["content"], str) else ""
+                enhanced.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": text},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{screenshot_b64}",
+                                "detail": "high",
+                            },
+                        },
+                    ],
+                })
+            else:
+                enhanced.append(msg)
+
+        return await self.chat(enhanced, temperature=temperature)
+
     async def chat(self, messages: list[dict], temperature: float = 0.2) -> str:
         if not self.is_configured:
             raise RuntimeError("LLM client not configured")

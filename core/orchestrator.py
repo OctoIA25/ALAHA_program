@@ -1,4 +1,5 @@
 import asyncio
+import json
 import sys
 import time
 from typing import Optional
@@ -6,7 +7,7 @@ from typing import Optional
 from core.logger import get_logger
 from core.connection import ConnectionServer
 from llm.client import LLMClient
-from llm.parser import parse_actions
+from llm.parser import parse_actions, parse_single_action
 from screenshot.capture import capture_screenshot
 
 from actions.base import ActionExecutor
@@ -23,6 +24,7 @@ from actions.terminal import WaitAction
 log = get_logger("orchestrator")
 
 SCREENSHOT_SETTLE_MS = 500
+MAX_VISION_STEPS = 25
 
 ACTION_MAP: dict[str, ActionExecutor] = {
     "wait": WaitAction(),
@@ -43,6 +45,38 @@ ACTION_MAP: dict[str, ActionExecutor] = {
     "close_window": CloseWindowAction(),
     "maximize_window": MaximizeWindowAction(),
 }
+
+_VISION_SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer. You can SEE the current state of the screen.
+
+Each turn you receive the current screenshot and must return EXACTLY ONE action to perform, or signal task completion.
+
+RESPONSE FORMAT — return ONLY a JSON object, no explanation, no markdown:
+- Action: {"type": "action_type", ...params}
+- Done:   {"done": true, "message": "brief summary of what was accomplished"}
+
+Available actions:
+- {"type": "wait", "ms": 500}
+- {"type": "move", "x": 100, "y": 200}
+- {"type": "click", "x": 100, "y": 200}
+- {"type": "double_click", "x": 100, "y": 200}
+- {"type": "right_click", "x": 100, "y": 200}
+- {"type": "drag", "from_x": 0, "from_y": 0, "to_x": 100, "to_y": 100}
+- {"type": "scroll", "x": 100, "y": 200, "direction": "down", "amount": 3}
+- {"type": "type", "text": "hello"}
+- {"type": "key", "key": "enter"}
+- {"type": "hotkey", "keys": ["ctrl", "c"]}
+- {"type": "open_app", "app": "notepad"}
+- {"type": "run_command", "command": "dir"}
+- {"type": "focus_window", "title": "Notepad"}
+- {"type": "close_window", "title": "Notepad"}
+- {"type": "maximize_window", "title": "Notepad"}
+
+RULES:
+- The screenshot resolution is 1280x720 — use precise coordinates based on what you see
+- Return ONLY valid JSON, nothing else
+- If a previous action failed, try a different approach
+- When the task is fully complete, return the done signal
+"""
 
 _SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer.
 You receive an instruction from the user and must return a JSON array of actions to execute on the computer.
@@ -65,6 +99,20 @@ Available action types:
 - focus_window: {title}
 - close_window: {title}
 - maximize_window: {title}
+"""
+
+_VISION_SYSTEM_PROMPT_WINDOWS = _VISION_SYSTEM_PROMPT_COMMON + """WINDOWS TIPS:
+- To open an app: press key "win", wait 500ms, type the app name, wait 1000ms, press "enter" — this is the most reliable method
+- To bring a window to front: use focus_window with the window title
+- For text input fields: click on the field first, then use type
+- Start Menu search is always visible after pressing the win key
+"""
+
+_VISION_SYSTEM_PROMPT_LINUX = _VISION_SYSTEM_PROMPT_COMMON + """LINUX TIPS:
+- To open an app: use run_command with the binary name followed by & (e.g. "google-chrome &")
+- To open a terminal: hotkey ["ctrl", "alt", "t"]
+- Use focus_window to bring windows to front (requires xdotool or wmctrl)
+- Use run_command for any shell operation
 """
 
 _SYSTEM_PROMPT_WINDOWS = _SYSTEM_PROMPT_COMMON + """IMPORTANT TIPS FOR WINDOWS:
@@ -126,6 +174,7 @@ Respond ONLY with a JSON array of action objects. Example to open a terminal and
 """
 
 SYSTEM_PROMPT = _SYSTEM_PROMPT_LINUX if sys.platform.startswith("linux") else _SYSTEM_PROMPT_WINDOWS
+VISION_SYSTEM_PROMPT = _VISION_SYSTEM_PROMPT_LINUX if sys.platform.startswith("linux") else _VISION_SYSTEM_PROMPT_WINDOWS
 
 
 class Orchestrator:
@@ -153,24 +202,72 @@ class Orchestrator:
             return
 
         self._busy = True
-        log.info(f"Processing instruction: {instruction[:80]}...")
+        log.info(f"Vision loop started: {instruction[:80]}")
+        action_history: list[dict] = []
 
         try:
-            messages = [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": instruction},
-            ]
-            llm_response = await self.llm.chat(messages)
-            actions = parse_actions(llm_response)
+            for step in range(MAX_VISION_STEPS):
+                screenshot = capture_screenshot()
+                if not screenshot:
+                    await self._send_error(session_id, step, "Failed to capture screenshot")
+                    return
 
-            if not actions:
-                await self._send_error(session_id, 0, "LLM returned no valid actions")
-                return
+                messages = self._build_vision_messages(instruction, action_history, step)
+                llm_response = await self.llm.chat_with_vision(messages, screenshot)
+                result = parse_single_action(llm_response)
 
-            await self._execute_actions(session_id, actions)
+                if result is None:
+                    await self._send_error(session_id, step, "LLM returned an invalid response")
+                    return
+
+                if result.get("done"):
+                    log.info(f"Task complete at step {step + 1}: {result.get('message', '')}")
+                    await self.connection.send({
+                        "type": "action_complete",
+                        "session_id": session_id,
+                        "success": True,
+                        "total_actions": step,
+                    })
+                    return
+
+                action_type = result.get("type", "unknown")
+                executor = ACTION_MAP.get(action_type)
+
+                if not executor:
+                    log.warning(f"Unknown action type at step {step}: {action_type}")
+                    action_history.append({"action": result, "success": False, "error": f"Unknown action: {action_type}"})
+                    continue
+
+                log.info(f"Vision step [{step + 1}/{MAX_VISION_STEPS}]: {action_type}")
+
+                try:
+                    exec_result = await executor.execute(result)
+                    success = exec_result.get("success", False)
+                    error_msg = exec_result.get("message", "") if not success else ""
+                    action_history.append({"action": result, "success": success, "error": error_msg})
+                except Exception as e:
+                    action_history.append({"action": result, "success": False, "error": str(e)})
+
+                await asyncio.sleep(SCREENSHOT_SETTLE_MS / 1000)
+
+                post_screenshot = capture_screenshot(result.get("x"), result.get("y"))
+                if post_screenshot:
+                    await self.connection.send({
+                        "type": "screenshot",
+                        "session_id": session_id,
+                        "action_index": step,
+                        "screenshot": post_screenshot,
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    })
+
+            await self._send_error(
+                session_id,
+                MAX_VISION_STEPS - 1,
+                f"Max steps ({MAX_VISION_STEPS}) reached without completing the task",
+            )
 
         except Exception as e:
-            log.error(f"Orchestrator error: {e}")
+            log.error(f"Vision loop error: {e}")
             await self._send_error(session_id, 0, str(e))
         finally:
             self._busy = False
@@ -237,6 +334,27 @@ class Orchestrator:
             "total_actions": total,
         })
         log.info(f"All {total} actions completed for session {session_id}")
+
+    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int) -> list[dict]:
+        history_text = ""
+        if action_history:
+            lines = []
+            for i, h in enumerate(action_history[-10:]):
+                action_str = json.dumps(h["action"], ensure_ascii=False)
+                status = "OK" if h["success"] else f"FAILED: {h.get('error', '')}"
+                lines.append(f"  {i + 1}. {action_str} -> {status}")
+            history_text = "\nActions executed so far:\n" + "\n".join(lines)
+
+        user_text = (
+            f"Task: {instruction}\n"
+            f"Current step: {step + 1}/{MAX_VISION_STEPS}"
+            f"{history_text}\n\n"
+            "Look at the screenshot and return the next action JSON, or {\"done\": true} if the task is complete."
+        )
+        return [
+            {"role": "system", "content": VISION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_text},
+        ]
 
     async def _send_error(self, session_id: str, action_index: int, message: str) -> None:
         await self.connection.send({

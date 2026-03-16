@@ -58,6 +58,33 @@ def parse_actions(llm_response: str) -> list[dict]:
     return valid_actions
 
 
+def parse_single_action(llm_response: str) -> Optional[dict]:
+    """Parse a single action or done signal from LLM response (used in vision loop)."""
+    json_str = _extract_json(llm_response)
+    if not json_str:
+        json_str = llm_response.strip()
+
+    try:
+        raw = json.loads(json_str)
+    except json.JSONDecodeError as e:
+        log.error(f"Failed to parse single action JSON: {e} | response: {llm_response[:200]}")
+        return None
+
+    if not isinstance(raw, dict):
+        log.error("Single action response is not a JSON object")
+        return None
+
+    if raw.get("done") is True:
+        return {"done": True, "message": raw.get("message", "Task complete")}
+
+    try:
+        action = ActionStep(**raw)
+        return action.model_dump()
+    except Exception as e:
+        log.warning(f"Invalid single action: {e} | raw: {raw}")
+        return None
+
+
 def _extract_json(text: str) -> Optional[str]:
     pattern = r"```(?:json)?\s*\n?([\s\S]*?)```"
     match = re.search(pattern, text)
