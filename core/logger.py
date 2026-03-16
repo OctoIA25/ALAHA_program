@@ -1,3 +1,4 @@
+import io
 import logging
 import sys
 from pathlib import Path
@@ -15,7 +16,13 @@ _file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
 _file_handler.setFormatter(_formatter)
 _file_handler.setLevel(logging.DEBUG)
 
-_console_handler = logging.StreamHandler(sys.stdout)
+_stdout_safe = io.TextIOWrapper(
+    sys.stdout.buffer,
+    encoding="utf-8",
+    errors="replace",
+    line_buffering=True,
+) if hasattr(sys.stdout, "buffer") else sys.stdout
+_console_handler = logging.StreamHandler(_stdout_safe)
 _console_handler.setFormatter(_formatter)
 _console_handler.setLevel(logging.INFO)
 
