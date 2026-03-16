@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}Chat — {{ machine.name|default:machine.snowflake_id }} — ALAHA Dashboard{% endblock %}
+
+{% block content %}
+<div class="flex flex-col h-full" x-data="chatApp()" x-init="connect()">
+    <!-- Chat header -->
+    <div class="px-6 py-3 border-b border-gray-800 bg-gray-900/50 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'machine-detail' machine.snowflake_id %}" class="text-gray-400 hover:text-white transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </a>
+            <div>
+                <h1 class="text-sm font-semibold text-white">{{ machine.name|default:machine.snowflake_id }}</h1>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full" :class="status === 'online' ? 'bg-green-500' : 'bg-gray-600'"></span>
+                    <span class="text-xs" :class="status === 'online' ? 'text-green-400' : 'text-gray-500'" x-text="status"></span>
+                </div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="text-xs text-gray-500" x-show="wsConnected">WS conectado</span>
+            <span class="text-xs text-red-400" x-show="!wsConnected">WS desconectado</span>
+        </div>
+    </div>
+
+    <!-- Split view: Screen stream + Messages -->
+    <div class="flex-1 flex overflow-hidden">
+        <!-- Live screen stream -->
+        <div class="w-1/2 bg-black border-r border-gray-800 relative">
+            <div class="absolute top-2 left-2 z-10 bg-black/70 px-2 py-1 rounded text-xs text-green-400">
+                <span x-show="streamConnected">📡 LIVE</span>
+                <span x-show="!streamConnected" class="text-red-400">📡 OFFLINE</span>
+            </div>
+            <div class="w-full h-full relative" x-ref="screenContainer">
+                <img 
+                    x-show="currentFrame" 
+                    :src="`data:image/jpeg;base64,${currentFrame}`" 
+                    class="w-full h-full object-contain"
+                    alt="Screen stream"
+                />
+                <!-- Cursor overlay -->
+                <div 
+                    x-show="streamConnected && cursorPos.x > 0"
+                    class="absolute w-4 h-4 bg-red-500 rounded-full pointer-events-none transform -translate-x-1/2 -translate-y-1/2 border-2 border-white shadow-lg"
+                    :style="`left: ${cursorPos.x}px; top: ${cursorPos.y}px;`"
+                >
+                    <div class="absolute inset-0 bg-red-500 rounded-full animate-ping"></div>
+                </div>
+                <!-- Connection status overlay -->
+                <div x-show="!streamConnected" class="absolute inset-0 flex items-center justify-center bg-gray-900/90">
+                    <div class="text-center">
+                        <svg class="w-12 h-12 mx-auto mb-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                        <p class="text-gray-400 text-sm">Conectando ao stream da tela...</p>
+                        <p class="text-gray-500 text-xs mt-1">Inicie o servidor de stream: python -m stream.server</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages area -->
+        <div class="flex-1 flex flex-col overflow-hidden">
+            <!-- Live thinking ticker -->
+            <div x-show="currentThinking" x-transition class="px-4 py-2 bg-gradient-to-r from-blue-900/50 to-purple-900/50 border-b border-blue-800/30">
+                <div class="flex items-center gap-2">
+                    <div class="w-2 h-2 bg-blue-400 rounded-full animate-pulse"></div>
+                    <span class="text-xs text-blue-300 font-medium">🤔 Pensando:</span>
+                    <span class="text-xs text-blue-200 flex-1" x-text="currentThinking"></span>
+                </div>
+            </div>
+            
+            <!-- Messages scroll area -->
+            <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-messages" x-ref="chatMessages">
+        {% for msg in messages %}
+        <div class="flex {% if msg.role == 'user' %}justify-end{% else %}justify-start{% endif %}">
+            <div class="max-w-[70%] px-4 py-2.5 rounded-2xl text-sm
+                {% if msg.role == 'user' %}bg-brand-600 text-white rounded-br-md
+                {% elif msg.role == 'assistant' %}bg-gray-800 text-gray-200 rounded-bl-md
+                {% else %}bg-gray-800/50 text-gray-400 rounded-bl-md border border-gray-700{% endif %}">
+                {{ msg.content }}
+                <div class="text-[10px] mt-1 {% if msg.role == 'user' %}text-brand-300{% else %}text-gray-500{% endif %}">
+                    {{ msg.created_at|time:"H:i" }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Dynamic messages -->
+        <template x-for="msg in chatMessages" :key="msg.id">
+            <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                <div class="px-4 py-2.5 rounded-2xl text-sm"
+                     :class="msg.role === 'user' ? 'max-w-[70%] bg-brand-600 text-white rounded-br-md' :
+                             msg.role === 'error' ? 'max-w-[70%] bg-red-900/50 text-red-300 rounded-bl-md border border-red-800' :
+                             msg.role === 'thinking' ? 'max-w-[85%] bg-gray-900/80 text-gray-400 rounded-bl-md border border-gray-700/50 italic' :
+                             'max-w-[70%] bg-gray-800 text-gray-200 rounded-bl-md'">
+                    <template x-if="msg.role === 'thinking'">
+                        <span class="text-xs text-gray-500 not-italic font-medium mr-1" x-text="`🤔 Passo ${msg.step}:`"></span>
+                    </template>
+                    <span x-text="msg.content"></span>
+                    <!-- Screenshot -->
+                    <template x-if="msg.screenshot">
+                        <img :src="'data:image/jpeg;base64,' + msg.screenshot" class="mt-2 rounded-lg max-w-full" />
+                    </template>
+                    <div class="text-[10px] mt-1" :class="msg.role === 'user' ? 'text-brand-300' : 'text-gray-500'" x-text="msg.time"></div>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- Input area -->
+    <div class="px-6 py-4 border-t border-gray-800 bg-gray-900/50 shrink-0">
+        <form @submit.prevent="sendMessage()" class="flex items-center gap-3">
+            <input type="text" x-model="inputText" placeholder="Digite um comando para a máquina..."
+                   :disabled="!wsConnected"
+                   class="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-xl text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent disabled:opacity-50">
+            <button type="submit" :disabled="!wsConnected || !inputText.trim()"
+                    class="px-4 py-2.5 bg-brand-600 hover:bg-brand-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-xl text-sm font-medium transition-colors">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+            </button>
+            <button type="button" @click="stopExecution()" x-show="executing"
+                    class="px-3 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition-colors">
+                Stop
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+function chatApp() {
+    return {
+        ws: null,
+        streamWs: null,
+        wsConnected: false,
+        streamConnected: false,
+        status: 'offline',
+        executing: false,
+        inputText: '',
+        chatMessages: [],
+        msgCounter: 0,
+        currentFrame: '',
+        cursorPos: { x: 0, y: 0 },
+        screenScale: 1,
+        currentThinking: '',
+
+        connect() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${location.host}/ws/chat/{{ machine.snowflake_id }}/`;
+
+            this.ws = new WebSocket(wsUrl);
+
+            this.ws.onopen = () => {
+                this.wsConnected = true;
+            };
+
+            this.ws.onclose = () => {
+                this.wsConnected = false;
+                setTimeout(() => this.connect(), 3000);
+            };
+
+            this.ws.onerror = () => {
+                this.wsConnected = false;
+            };
+
+            this.ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                this.handleMessage(data);
+            };
+
+            // Connect to stream server
+            this.connectStream();
+        },
+
+        connectStream() {
+            const streamUrl = 'ws://localhost:8765';
+            this.streamWs = new WebSocket(streamUrl);
+
+            this.streamWs.onopen = () => {
+                this.streamConnected = true;
+                console.log('Connected to screen stream');
+            };
+
+            this.streamWs.onclose = () => {
+                this.streamConnected = false;
+                this.currentFrame = '';
+                setTimeout(() => this.connectStream(), 3000);
+            };
+
+            this.streamWs.onerror = (error) => {
+                this.streamConnected = false;
+                console.error('Stream error:', error);
+            };
+
+            this.streamWs.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'frame') {
+                    this.currentFrame = data.frame;
+                    this.updateCursorPos(data.cursor, data.screen_size);
+                }
+            };
+        },
+
+        updateCursorPos(cursor, screenSize) {
+            if (!this.$refs.screenContainer) return;
+            
+            const container = this.$refs.screenContainer;
+            const containerRect = container.getBoundingClientRect();
+            const img = container.querySelector('img');
+            
+            if (!img) return;
+            
+            // Calculate scale factor (image might be scaled to fit)
+            const scaleX = img.naturalWidth / img.width;
+            const scaleY = img.naturalHeight / img.height;
+            
+            // Scale cursor position to match displayed image
+            this.cursorPos = {
+                x: cursor.x / scaleX,
+                y: cursor.y / scaleY
+            };
+        },
+
+        handleMessage(data) {
+            const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+            if (data.type === 'machine_status') {
+                this.status = data.status;
+            } else if (data.type === 'assistant_message') {
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'assistant',
+                    content: data.content,
+                    time: now,
+                });
+                this.executing = true;
+            } else if (data.type === 'agent_thinking') {
+                // Update live thinking ticker
+                this.currentThinking = `[Passo ${data.step}] ${data.thinking}`;
+                
+                // Also add to message history
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'thinking',
+                    content: data.thinking,
+                    step: data.step,
+                    time: now,
+                });
+            } else if (data.type === 'screenshot') {
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'system',
+                    content: `Screenshot (ação ${data.action_index})`,
+                    screenshot: data.screenshot,
+                    time: now,
+                });
+            } else if (data.type === 'action_complete') {
+                const completionText = data.message
+                    ? data.message
+                    : (data.success ? `Execução concluída — ${data.total_actions} ações realizadas` : `Execução falhou`);
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'assistant',
+                    content: completionText,
+                    time: now,
+                });
+                this.executing = false;
+                this.currentThinking = ''; // Clear thinking ticker
+            } else if (data.type === 'error') {
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'error',
+                    content: `Erro na ação ${data.action_index}: ${data.message}`,
+                    time: now,
+                });
+                this.executing = false;
+                this.currentThinking = ''; // Clear thinking ticker
+            } else if (data.type === 'llm_configured') {
+                this.chatMessages.push({
+                    id: ++this.msgCounter,
+                    role: 'system',
+                    content: `LLM configurada: ${data.model}`,
+                    time: now,
+                });
+            }
+
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+        },
+
+        sendMessage() {
+            const text = this.inputText.trim();
+            if (!text || !this.wsConnected) return;
+
+            const now = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            this.chatMessages.push({
+                id: ++this.msgCounter,
+                role: 'user',
+                content: text,
+                time: now,
+            });
+
+            this.ws.send(JSON.stringify({
+                type: 'user_message',
+                content: text,
+            }));
+
+            this.inputText = '';
+
+            this.$nextTick(() => {
+                const container = this.$refs.chatMessages;
+                if (container) container.scrollTop = container.scrollHeight;
+            });
+        },
+
+        stopExecution() {
+            if (this.ws && this.wsConnected) {
+                this.ws.send(JSON.stringify({ type: 'stop_execution' }));
+            }
+            this.executing = false;
+        },
+    }
+}
+</script>
+{% endblock %}
