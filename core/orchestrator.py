@@ -20,6 +20,7 @@ from actions.keyboard import (
 from actions.apps import OpenAppAction, RunCommandAction
 from actions.windows import FocusWindowAction, CloseWindowAction, MaximizeWindowAction
 from actions.terminal import WaitAction
+from actions.navigate import NavigateAction
 
 log = get_logger("orchestrator")
 
@@ -41,6 +42,7 @@ ACTION_MAP: dict[str, ActionExecutor] = {
     "key_up": KeyUpAction(),
     "open_app": OpenAppAction(),
     "run_command": RunCommandAction(),
+    "navigate": NavigateAction(),
     "focus_window": FocusWindowAction(),
     "close_window": CloseWindowAction(),
     "maximize_window": MaximizeWindowAction(),
@@ -63,6 +65,7 @@ To signal task completion:
 
 Available actions:
 - {"type": "wait", "ms": 500}
+- {"type": "navigate", "url": "https://web.whatsapp.com"}  ← USE THIS to open any website (reliable, no clicking needed)
 - {"type": "move", "x": 100, "y": 200}
 - {"type": "click", "x": 100, "y": 200}
 - {"type": "double_click", "x": 100, "y": 200}
@@ -72,17 +75,18 @@ Available actions:
 - {"type": "type", "text": "hello"}
 - {"type": "key", "key": "enter"}
 - {"type": "hotkey", "keys": ["ctrl", "c"]}
-- {"type": "open_app", "app": "notepad"}
+- {"type": "open_app", "app": "google-chrome"}
 - {"type": "run_command", "command": "dir"}
-- {"type": "focus_window", "title": "Notepad"}
+- {"type": "focus_window", "title": "Chrome"}
 - {"type": "close_window", "title": "Notepad"}
-- {"type": "maximize_window", "title": "Notepad"}
+- {"type": "maximize_window", "title": "Chrome"}
 
 RULES:
+- PREFER "navigate" over clicking the address bar — it's always reliable
 - Use the EXACT pixel coordinates you see in the screenshot — they match the real screen 1:1
 - Always fill the "thinking" field with your reasoning before choosing the action
 - If a previous action failed or nothing changed, try a completely different approach
-- Use {"type": "wait", "ms": 1500} after opening apps or clicking buttons that trigger loading
+- Use {"type": "wait", "ms": 2000} after opening apps or navigating to URLs
 - When the task is fully complete, return the done signal
 """
 
