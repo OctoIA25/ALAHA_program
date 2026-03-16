@@ -59,7 +59,13 @@ def parse_actions(llm_response: str) -> list[dict]:
 
 
 def parse_single_action(llm_response: str) -> Optional[dict]:
-    """Parse a single action or done signal from LLM response (used in vision loop)."""
+    """Parse a single action or done signal from LLM response (used in vision loop).
+
+    Supports three response formats:
+    1. {"thinking": "...", "action": {...}}   — preferred: think-then-act
+    2. {"done": true, "message": "..."}       — task complete signal
+    3. {"type": "...", ...}                   — plain action (backward compat)
+    """
     json_str = _extract_json(llm_response)
     if not json_str:
         json_str = llm_response.strip()
@@ -77,11 +83,18 @@ def parse_single_action(llm_response: str) -> Optional[dict]:
     if raw.get("done") is True:
         return {"done": True, "message": raw.get("message", "Task complete")}
 
+    thinking = raw.get("thinking", "")
+
+    action_raw = raw.get("action", raw)
+
     try:
-        action = ActionStep(**raw)
-        return action.model_dump()
+        action = ActionStep(**action_raw)
+        result = action.model_dump()
+        if thinking:
+            result["__thinking__"] = thinking
+        return result
     except Exception as e:
-        log.warning(f"Invalid single action: {e} | raw: {raw}")
+        log.warning(f"Invalid single action: {e} | raw: {action_raw}")
         return None
 
 

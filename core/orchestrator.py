@@ -48,11 +48,18 @@ ACTION_MAP: dict[str, ActionExecutor] = {
 
 _VISION_SYSTEM_PROMPT_COMMON = """You are ALAHA, an AI agent that controls a computer. You can SEE the current state of the screen.
 
-Each turn you receive the current screenshot and must return EXACTLY ONE action to perform, or signal task completion.
+Each turn you receive a screenshot and must:
+1. THINK: describe what you see and what you plan to do next
+2. ACT: choose exactly ONE action to execute
 
-RESPONSE FORMAT — return ONLY a JSON object, no explanation, no markdown:
-- Action: {"type": "action_type", ...params}
-- Done:   {"done": true, "message": "brief summary of what was accomplished"}
+RESPONSE FORMAT — return ONLY a JSON object:
+{
+  "thinking": "I can see X. The task requires Y. I will do Z next.",
+  "action": {"type": "action_type", ...params}
+}
+
+To signal task completion:
+{"done": true, "message": "brief description of what was accomplished"}
 
 Available actions:
 - {"type": "wait", "ms": 500}
@@ -72,9 +79,10 @@ Available actions:
 - {"type": "maximize_window", "title": "Notepad"}
 
 RULES:
-- The screenshot resolution is 1280x720 — use precise coordinates based on what you see
-- Return ONLY valid JSON, nothing else
-- If a previous action failed, try a different approach
+- Screenshot resolution is 1280x720 — use precise coordinates based on what you actually see
+- Always fill the "thinking" field with your reasoning before choosing the action
+- If a previous action failed or nothing changed, try a completely different approach
+- Use {"type": "wait", "ms": 1000} after opening apps to let them load
 - When the task is fully complete, return the done signal
 """
 
@@ -204,6 +212,8 @@ class Orchestrator:
         self._busy = True
         log.info(f"Vision loop started: {instruction[:80]}")
         action_history: list[dict] = []
+        stuck_count = 0
+        last_action_key: Optional[str] = None
 
         try:
             for step in range(MAX_VISION_STEPS):
@@ -212,7 +222,7 @@ class Orchestrator:
                     await self._send_error(session_id, step, "Failed to capture screenshot")
                     return
 
-                messages = self._build_vision_messages(instruction, action_history, step)
+                messages = self._build_vision_messages(instruction, action_history, step, stuck_count)
                 llm_response = await self.llm.chat_with_vision(messages, screenshot)
                 result = parse_single_action(llm_response)
 
@@ -232,6 +242,16 @@ class Orchestrator:
                     })
                     return
 
+                thinking = result.pop("__thinking__", "")
+                if thinking:
+                    log.info(f"[step {step + 1}] thinking: {thinking[:120]}")
+                    await self.connection.send({
+                        "type": "agent_thinking",
+                        "session_id": session_id,
+                        "step": step + 1,
+                        "thinking": thinking,
+                    })
+
                 action_type = result.get("type", "unknown")
                 executor = ACTION_MAP.get(action_type)
 
@@ -240,15 +260,26 @@ class Orchestrator:
                     action_history.append({"action": result, "success": False, "error": f"Unknown action: {action_type}"})
                     continue
 
+                current_action_key = json.dumps(result, sort_keys=True)
+                if current_action_key == last_action_key:
+                    stuck_count += 1
+                    log.warning(f"Same action repeated ({stuck_count}x): {action_type}")
+                    if stuck_count >= 5:
+                        await self._send_error(session_id, step, "Bot stuck: same action repeated 5 times without progress")
+                        return
+                else:
+                    stuck_count = 0
+                    last_action_key = current_action_key
+
                 log.info(f"Vision step [{step + 1}/{MAX_VISION_STEPS}]: {action_type}")
 
                 try:
                     exec_result = await executor.execute(result)
                     success = exec_result.get("success", False)
                     error_msg = exec_result.get("message", "") if not success else ""
-                    action_history.append({"action": result, "success": success, "error": error_msg})
+                    action_history.append({"action": result, "success": success, "error": error_msg, "thinking": thinking})
                 except Exception as e:
-                    action_history.append({"action": result, "success": False, "error": str(e)})
+                    action_history.append({"action": result, "success": False, "error": str(e), "thinking": thinking})
 
                 await asyncio.sleep(SCREENSHOT_SETTLE_MS / 1000)
 
@@ -337,21 +368,32 @@ class Orchestrator:
         })
         log.info(f"All {total} actions completed for session {session_id}")
 
-    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int) -> list[dict]:
+    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int, stuck_count: int = 0) -> list[dict]:
         history_text = ""
         if action_history:
             lines = []
             for i, h in enumerate(action_history[-10:]):
                 action_str = json.dumps(h["action"], ensure_ascii=False)
                 status = "OK" if h["success"] else f"FAILED: {h.get('error', '')}"
-                lines.append(f"  {i + 1}. {action_str} -> {status}")
+                thinking_hint = f" | thought: {h['thinking'][:60]}" if h.get("thinking") else ""
+                lines.append(f"  {i + 1}. {action_str} -> {status}{thinking_hint}")
             history_text = "\nActions executed so far:\n" + "\n".join(lines)
+
+        stuck_warning = ""
+        if stuck_count >= 3:
+            stuck_warning = (
+                "\n\n⚠️ WARNING: You have repeated the same action multiple times with no progress. "
+                "Look at the screenshot carefully and choose a COMPLETELY DIFFERENT approach."
+            )
 
         user_text = (
             f"Task: {instruction}\n"
             f"Current step: {step + 1}/{MAX_VISION_STEPS}"
-            f"{history_text}\n\n"
-            "Look at the screenshot and return the next action JSON, or {\"done\": true} if the task is complete."
+            f"{history_text}"
+            f"{stuck_warning}\n\n"
+            'Look at the screenshot. Think carefully about what you see, then return your response as:\n'
+            '{"thinking": "what I see and what I will do", "action": {...}}\n'
+            'Or {"done": true, "message": "..."} if the task is complete.'
         )
         return [
             {"role": "system", "content": VISION_SYSTEM_PROMPT},
