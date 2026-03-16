@@ -79,10 +79,10 @@ Available actions:
 - {"type": "maximize_window", "title": "Notepad"}
 
 RULES:
-- Screenshot resolution is 1280x720 — use precise coordinates based on what you actually see
+- Use the EXACT pixel coordinates you see in the screenshot — they match the real screen 1:1
 - Always fill the "thinking" field with your reasoning before choosing the action
 - If a previous action failed or nothing changed, try a completely different approach
-- Use {"type": "wait", "ms": 1000} after opening apps to let them load
+- Use {"type": "wait", "ms": 1500} after opening apps or clicking buttons that trigger loading
 - When the task is fully complete, return the done signal
 """
 
@@ -283,7 +283,9 @@ class Orchestrator:
 
                 await asyncio.sleep(SCREENSHOT_SETTLE_MS / 1000)
 
-                post_screenshot = capture_screenshot(result.get("x"), result.get("y"))
+                hl_x = exec_result.get("x") if exec_result.get("success") else None
+                hl_y = exec_result.get("y") if exec_result.get("success") else None
+                post_screenshot = capture_screenshot(hl_x, hl_y)
                 if post_screenshot:
                     await self.connection.send({
                         "type": "screenshot",
