@@ -9,13 +9,13 @@ from core.logger import get_logger
 
 log = get_logger("screenshot")
 
-MAX_WIDTH = 1280
-MAX_HEIGHT = 720
-JPEG_QUALITY = 75
+MAX_WIDTH = 1366
+MAX_HEIGHT = 768
+JPEG_QUALITY = 82
 
 
-def _get_screen_size() -> tuple[int, int]:
-    """Return the native screen resolution (width, height)."""
+def get_native_size() -> tuple[int, int]:
+    """Return the native screen resolution (width, height). Refreshed each call."""
     try:
         with mss.mss() as sct:
             monitor = sct.monitors[1]
@@ -24,24 +24,23 @@ def _get_screen_size() -> tuple[int, int]:
         return 1920, 1080
 
 
-_NATIVE_W, _NATIVE_H = _get_screen_size()
-
-
-def get_native_size() -> tuple[int, int]:
-    """Public accessor for the native screen resolution."""
-    return _NATIVE_W, _NATIVE_H
-
-
 def capture_screenshot(
     highlight_x: Optional[int] = None,
     highlight_y: Optional[int] = None,
     radius: int = 30,
-) -> str:
-    """Capture screen, optionally highlight a point, resize for LLM, return base64 JPEG.
+) -> dict:
+    """Capture screen, optionally highlight a point, resize for LLM.
 
-    Coordinates are always in NATIVE screen space (the real pixel coords).
-    The image is resized to MAX_WIDTH x MAX_HEIGHT for efficient LLM processing,
-    but the coordinate system the LLM sees matches the native resolution.
+    Returns dict with keys:
+      image    – base64-encoded JPEG string
+      sent_w   – width of the resized image sent to the LLM
+      sent_h   – height of the resized image sent to the LLM
+      native_w – real screen width in pixels
+      native_h – real screen height in pixels
+
+    Highlight coordinates are in NATIVE screen space.
+    The LLM should report coordinates in sent_w x sent_h space;
+    the orchestrator scales them back to native before executing.
     """
     try:
         with mss.mss() as sct:
@@ -59,18 +58,25 @@ def capture_screenshot(
                 width=4,
             )
 
+        sent_w, sent_h = native_w, native_h
         if native_w > MAX_WIDTH or native_h > MAX_HEIGHT:
             ratio = min(MAX_WIDTH / native_w, MAX_HEIGHT / native_h)
-            new_w = int(native_w * ratio)
-            new_h = int(native_h * ratio)
-            img = img.resize((new_w, new_h), Image.LANCZOS)
+            sent_w = int(native_w * ratio)
+            sent_h = int(native_h * ratio)
+            img = img.resize((sent_w, sent_h), Image.LANCZOS)
             img = img.filter(ImageFilter.SHARPEN)
 
         buffer = io.BytesIO()
         img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
         encoded = base64.b64encode(buffer.getvalue()).decode()
-        log.debug(f"Screenshot captured: native={native_w}x{native_h}, sent={img.width}x{img.height}, {len(encoded)} chars base64")
-        return encoded
+        log.debug(f"Screenshot captured: native={native_w}x{native_h}, sent={sent_w}x{sent_h}, {len(encoded)} chars base64")
+        return {
+            "image": encoded,
+            "sent_w": sent_w,
+            "sent_h": sent_h,
+            "native_w": native_w,
+            "native_h": native_h,
+        }
     except Exception as e:
         log.error(f"Screenshot capture failed: {e}")
-        return ""
+        return {"image": "", "sent_w": 0, "sent_h": 0, "native_w": 0, "native_h": 0}

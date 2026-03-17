@@ -1,5 +1,6 @@
 import asyncio
 import json
+import subprocess
 import sys
 import time
 from typing import Optional
@@ -8,7 +9,7 @@ from core.logger import get_logger
 from core.connection import ConnectionServer
 from llm.client import LLMClient
 from llm.parser import parse_actions, parse_single_action
-from screenshot.capture import capture_screenshot, get_native_size
+from screenshot.capture import capture_screenshot
 
 from actions.base import ActionExecutor
 from actions.mouse import (
@@ -78,88 +79,124 @@ Para executar uma acao:
 Para sinalizar que a tarefa foi concluida:
 {"done": true, "message": "Tarefa concluida com sucesso. Enviei a mensagem no WhatsApp."}
 
+=== SISTEMA DE COORDENADAS (IMPORTANTISSIMO) ===
+
+As coordenadas X,Y que voce informa devem corresponder DIRETAMENTE ao screenshot que voce esta vendo.
+- O ponto (0, 0) e o canto SUPERIOR ESQUERDO do screenshot.
+- A resolucao do screenshot e informada a cada passo (ex: 1366x768).
+- Suas coordenadas serao automaticamente convertidas para a resolucao real da tela.
+- NAO tente calcular ou converter coordenadas. Use EXATAMENTE as posicoes que voce ve na imagem.
+
+COMO IDENTIFICAR COORDENADAS COM PRECISAO:
+1. Localize o elemento alvo no screenshot visualmente.
+2. Identifique o CENTRO EXATO do elemento (nao a borda, nao o canto — o CENTRO).
+3. Estime X (horizontal, da esquerda para direita) e Y (vertical, de cima para baixo).
+4. Use essas coordenadas diretamente na acao.
+
+TECNICA DE GRADE MENTAL:
+- Divida o screenshot em quadrantes para estimar posicoes com precisao.
+- Para uma imagem 1366x768: centro = (683, 384), canto sup-esq = (0, 0), canto inf-dir = (1366, 768).
+- Barra de tarefas do Ubuntu: geralmente no topo (y ~ 0-28) ou lateral esquerda.
+- Botoes de janela (fechar/minimizar/maximizar): canto superior-direito ou superior-esquerdo da janela.
+- SEMPRE clique no CENTRO do botao ou elemento, NUNCA na borda.
+
 === ACOES DISPONIVEIS ===
 
 MOUSE:
-- {"type": "click", "x": 500, "y": 300} — Clique simples. Use coordenadas EXATAS do screenshot. SEMPRE clique no CENTRO do elemento alvo.
-- {"type": "double_click", "x": 500, "y": 300} — Duplo clique. Use para abrir arquivos, selecionar palavras.
+- {"type": "click", "x": 500, "y": 300} — Clique simples. SEMPRE clique no CENTRO EXATO do elemento alvo.
+- {"type": "double_click", "x": 500, "y": 300} — Duplo clique. Para abrir arquivos, selecionar palavras.
 - {"type": "right_click", "x": 500, "y": 300} — Clique direito. Abre menus de contexto.
-- {"type": "move", "x": 500, "y": 300} — Mover o cursor sem clicar. Use para hover em menus.
-- {"type": "drag", "from_x": 100, "from_y": 200, "to_x": 400, "to_y": 200} — Arrastar de um ponto a outro.
-- {"type": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3} — Rolar pagina. direction: "up" ou "down". amount: numero de cliques do scroll.
+- {"type": "move", "x": 500, "y": 300} — Mover cursor sem clicar. Para hover em menus.
+- {"type": "drag", "from_x": 100, "from_y": 200, "to_x": 400, "to_y": 200} — Arrastar.
+- {"type": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3} — Rolar. direction: "up"/"down".
 
 TECLADO:
-- {"type": "type", "text": "Ola mundo"} — Digitar texto. SUPORTA ACENTOS e caracteres especiais (UTF-8 completo). Use para preencher campos, escrever mensagens, digitar URLs.
-- {"type": "key", "key": "enter"} — Pressionar uma tecla. Teclas disponiveis: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, space, f1-f12, super (tecla do Linux/Windows).
-- {"type": "hotkey", "keys": ["ctrl", "c"]} — Combinacao de teclas. Exemplos: ["ctrl", "c"] copiar, ["ctrl", "v"] colar, ["ctrl", "a"] selecionar tudo, ["ctrl", "l"] focar barra de endereco, ["ctrl", "t"] nova aba, ["ctrl", "w"] fechar aba, ["alt", "f4"] fechar janela, ["ctrl", "alt", "t"] abrir terminal, ["super"] abrir lancador de apps.
-- {"type": "key_down", "key": "shift"} — Manter tecla pressionada.
-- {"type": "key_up", "key": "shift"} — Soltar tecla pressionada.
+- {"type": "type", "text": "Ola mundo"} — Digitar texto. Suporta acentos e UTF-8 completo.
+- {"type": "key", "key": "enter"} — Tecla unica. Disponiveis: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, space, f1-f12, super.
+- {"type": "hotkey", "keys": ["ctrl", "c"]} — Combinacao. Exemplos: ["ctrl","c"] copiar, ["ctrl","v"] colar, ["ctrl","a"] selecionar tudo, ["ctrl","l"] barra de endereco, ["ctrl","t"] nova aba, ["ctrl","w"] fechar aba, ["alt","f4"] fechar janela, ["ctrl","alt","t"] terminal, ["super"] lancador.
+- {"type": "key_down", "key": "shift"} / {"type": "key_up", "key": "shift"} — Segurar/soltar tecla.
 
 APLICATIVOS:
-- {"type": "open_app", "app": "chrome"} — Abrir aplicativo. Nomes suportados: chrome, firefox, chromium, edge, brave, terminal, files, nautilus, calculator, text-editor, gedit, code, vscode, libreoffice, writer, calc, gimp, vlc, spotify, telegram, discord, slack, obs, settings. O sistema encontra automaticamente o binario correto para sua distribuicao.
-- {"type": "run_command", "command": "ls -la /home"} — Executar comando shell. O comando roda em bash e retorna stdout/stderr. Use para operacoes de sistema, instalar pacotes, manipular arquivos, verificar processos, etc. NAO use & no final.
+- {"type": "open_app", "app": "chrome"} — Abrir app. Nomes: chrome, firefox, terminal, files, calculator, code, vscode, libreoffice, gimp, vlc, spotify, telegram, discord, etc.
+- {"type": "run_command", "command": "ls -la /home"} — Executar comando bash. Retorna stdout/stderr.
 
 NAVEGACAO WEB:
-- {"type": "navigate", "url": "https://web.whatsapp.com"} — MELHOR forma de abrir qualquer site. Funciona com qualquer navegador aberto. Foca a barra de endereco (Ctrl+L), limpa, digita a URL e pressiona Enter. SEMPRE use isso em vez de clicar na barra de endereco manualmente.
+- {"type": "navigate", "url": "https://web.whatsapp.com"} — MELHOR forma de abrir sites. Foca barra de endereco, limpa, digita URL, pressiona Enter. SEMPRE use em vez de clicar na barra manualmente.
 
 JANELAS:
-- {"type": "focus_window", "title": "Chrome"} — Trazer janela para frente pelo titulo (parcial). Usa xdotool internamente.
-- {"type": "close_window", "title": "Notepad"} — Fechar janela pelo titulo.
+- {"type": "focus_window", "title": "Chrome"} — Trazer janela para frente.
+- {"type": "close_window", "title": "Notepad"} — Fechar janela.
 - {"type": "maximize_window", "title": "Chrome"} — Maximizar janela.
 
 ESPERA:
-- {"type": "wait", "ms": 2000} — Aguardar milissegundos. ESSENCIAL apos abrir apps, navegar para paginas, ou clicar em botoes que carregam conteudo.
+- {"type": "wait", "ms": 2000} — Aguardar milissegundos. ESSENCIAL apos abrir apps ou navegar paginas.
 
-=== GUIAS E ESTRATEGIAS PARA LINUX ===
+=== NAVEGACAO EM NAVEGADORES WEB (ESTRATEGIA AVANCADA) ===
+
+Quando estiver em um navegador web, use estas tecnicas para navegacao PRECISA:
+
+HIERARQUIA DE CONFIABILIDADE (do mais ao menos confiavel):
+1. ATALHOS DE TECLADO: Ctrl+L (barra endereco), Ctrl+T (nova aba), Ctrl+W (fechar aba), Ctrl+F (buscar na pagina), Tab (proximo campo), Shift+Tab (campo anterior), Enter (confirmar/enviar).
+2. ACAO "navigate": Para URLs, SEMPRE use navigate. Nunca clique na barra de endereco.
+3. NAVEGACAO POR Tab: Em formularios, use Tab para pular entre campos — muito mais confiavel que cliques.
+4. CLIQUES PRECISOS: Quando necessario, identifique o CENTRO do elemento com cuidado extremo.
+
+IDENTIFICACAO DE ELEMENTOS NO NAVEGADOR:
+- Botoes: bordas definidas com texto centralizado. Clique no CENTRO do texto.
+- Links: texto sublinhado ou colorido. Clique no MEIO do texto.
+- Campos de input: retangulos claros/brancos. Clique no CENTRO da area.
+- Menus dropdown: clique na seta ou texto do menu.
+- Abas: clique no CENTRO do texto da aba.
+- Barras de rolagem: prefira scroll com acao "scroll" em vez de clicar na barra.
+
+FORMULARIOS WEB:
+- Use Tab para navegar entre campos (MUITO mais confiavel que cliques).
+- Apos digitar em um campo, Tab vai ao proximo campo.
+- Enter submete o formulario.
+- Se Tab nao funcionar, clique no CENTRO do campo.
+
+=== GUIAS GERAIS LINUX ===
 
 ABRINDO APLICATIVOS:
-- Metodo PRIMARIO: use "open_app" com o nome do app. Exemplo: {"type": "open_app", "app": "chrome"}
-- Metodo ALTERNATIVO: use "run_command" com o binario. Exemplo: {"type": "run_command", "command": "google-chrome"}
-- Se nenhum funcionar: pressione a tecla "super" para abrir o lancador, espere 500ms, digite o nome do app, espere 1000ms, pressione "enter".
-- SEMPRE espere 2000-3000ms apos abrir qualquer app antes de interagir com ele.
+- Primario: open_app com nome. Ex: {"type": "open_app", "app": "chrome"}
+- Alternativo: run_command. Ex: {"type": "run_command", "command": "google-chrome"}
+- Ultimo recurso: key "super" → wait 500ms → type nome → wait 1000ms → key "enter"
+- SEMPRE espere 2000-3000ms apos abrir qualquer app.
 
 NAVEGACAO WEB:
-- Para abrir um site: PRIMEIRO abra o navegador com open_app, DEPOIS espere 2000ms, DEPOIS use navigate com a URL.
-- NUNCA clique manualmente na barra de endereco. Use SEMPRE a acao "navigate".
-- Apos navegar para uma pagina, SEMPRE espere 3000-5000ms para a pagina carregar completamente.
-- Se a pagina parece nao ter carregado, use wait e tente novamente.
+- Abrir site: open_app navegador → wait 2000ms → navigate URL → wait 3000-5000ms
+- NUNCA clique na barra de endereco. Use SEMPRE navigate.
+- Se a pagina nao carregou, wait e tente novamente.
 
 WHATSAPP WEB:
 1. open_app "chrome" → wait 2000ms
 2. navigate "https://web.whatsapp.com" → wait 5000ms
-3. Se ja estiver logado: clique na caixa de pesquisa (icone de lupa ou campo "Pesquisar") no canto superior esquerdo
-4. type o nome do contato → wait 1000ms
-5. Clique no contato que apareceu nos resultados
-6. wait 500ms → clique no campo de mensagem (parte inferior da conversa)
-7. type a mensagem → key "enter" para enviar
+3. Se logado: clique na caixa de pesquisa (campo "Pesquisar" no topo esquerdo)
+4. type nome do contato → wait 1000ms
+5. Clique no contato nos resultados
+6. wait 500ms → clique no campo de mensagem (barra inferior)
+7. type a mensagem → key "enter"
 
 TERMINAL:
-- Para abrir: hotkey ["ctrl", "alt", "t"] ou open_app "terminal"
-- Apos abrir, espere 1000ms antes de digitar
-- Para executar comando: type o comando, depois key "enter"
-- Para comandos que precisam sudo: type "sudo comando" e depois forneca a senha se pedido
-
-GERENCIADOR DE ARQUIVOS:
-- Abrir: open_app "files" ou open_app "nautilus"
-- Navegar: clique duplo em pastas
-- Barra de endereco: hotkey ["ctrl", "l"] para digitar caminho
+- Abrir: hotkey ["ctrl", "alt", "t"] ou open_app "terminal"
+- Espere 1000ms, depois type comando + key "enter"
 
 EVITANDO FALHAS:
-- COORDENADAS: Use as coordenadas EXATAS que voce ve no screenshot. Elas correspondem 1:1 a tela real.
-- ESPERAS: Interfaces levam tempo para renderizar. Sempre use "wait" apos abrir apps, clicar botoes, ou navegar paginas. Tempos recomendados: abrir app (2000-3000ms), carregar pagina (3000-5000ms), transicao de tela (1000-2000ms), apos clique em botao (500-1000ms).
-- RECUPERACAO: Se o screenshot nao mudou apos sua ultima acao, seu clique provavelmente errou ou o app esta lento. NAO repita o mesmo clique. Tente: (a) clicar em uma area diferente do mesmo botao, (b) usar atalho de teclado equivalente, (c) usar Tab para navegar, (d) esperar mais tempo.
-- MENUS: Para clicar em itens de menu, mova o mouse ate o item e clique. Se o menu fechar, clique novamente no botao que o abriu.
+- ESPERAS: Sempre use "wait" apos abrir apps (2000-3000ms), carregar paginas (3000-5000ms), transicoes (1000-2000ms), apos cliques (500-1000ms).
+- RECUPERACAO DE CLIQUES: Se o screenshot NAO mudou apos seu clique, o clique ERROU o alvo. NAO repita o mesmo clique. Em vez disso: (a) reanalise o screenshot e clique em posicao ligeiramente diferente — mais ao CENTRO do elemento, (b) use atalho de teclado equivalente, (c) use Tab para navegar, (d) tente abordagem completamente diferente.
+- MENUS: Se um menu fechou, clique novamente no botao que o abriu.
+- POPUPS: Feche popups inesperados com botao X, Escape, ou "OK"/"Fechar".
 
 PROATIVIDADE:
-- Quebre tarefas vagas em passos concretos. Exemplo: "manda mensagem pro joao" → abrir chrome → navegar whatsapp → esperar → pesquisar joao → clicar contato → digitar mensagem → enviar.
-- NAO peca ajuda ao usuario. Voce tem autonomia total para completar a tarefa.
-- Se encontrar um obstaculo (popup, dialogo inesperado, etc.), resolva sozinho: feche o popup, clique em "OK", ou encontre uma alternativa.
+- Quebre tarefas vagas em passos concretos.
+- NAO peca ajuda ao usuario. Voce tem autonomia total.
+- Resolva obstaculos sozinho.
 
 === REGRAS ABSOLUTAS ===
 - Retorne SOMENTE JSON valido. Nenhum texto antes ou depois.
 - SEMPRE inclua seu raciocinio no campo "thinking".
 - Execute APENAS UMA acao por turno.
-- Use coordenadas em pixels da tela nativa.
+- Use coordenadas em pixels do screenshot que voce ve. Elas serao convertidas automaticamente.
 """
 
 # ---------------------------------------------------------------------------
@@ -176,6 +213,20 @@ A cada turno voce recebe um screenshot da tela e deve:
 1. PENSAR: Analisar a tela cuidadosamente. O que mudou? Onde estamos no plano? Qual e o proximo passo exato?
 2. AGIR: Escolher EXATAMENTE UMA acao para executar.
 
+=== SISTEMA DE COORDENADAS (IMPORTANTISSIMO) ===
+
+As coordenadas X,Y devem corresponder DIRETAMENTE ao screenshot que voce esta vendo.
+- O ponto (0, 0) e o canto SUPERIOR ESQUERDO.
+- A resolucao do screenshot e informada a cada passo.
+- Suas coordenadas serao convertidas automaticamente para a resolucao real da tela.
+- NAO tente converter coordenadas. Use EXATAMENTE as posicoes da imagem.
+- SEMPRE clique no CENTRO EXATO do elemento alvo (nao na borda).
+
+TECNICA DE GRADE MENTAL:
+- Divida o screenshot em quadrantes para precisao.
+- Barra de tarefas do Windows: geralmente na parte inferior (y proximo ao maximo).
+- Botoes de janela (fechar/minimizar/maximizar): canto superior-direito.
+
 === FORMATO DE RESPOSTA (SOMENTE JSON) ===
 
 Para executar uma acao:
@@ -187,7 +238,7 @@ Para sinalizar conclusao:
 === ACOES DISPONIVEIS ===
 
 MOUSE:
-- {"type": "click", "x": 500, "y": 300}
+- {"type": "click", "x": 500, "y": 300} — Clique no CENTRO EXATO do elemento.
 - {"type": "double_click", "x": 500, "y": 300}
 - {"type": "right_click", "x": 500, "y": 300}
 - {"type": "move", "x": 500, "y": 300}
@@ -195,18 +246,17 @@ MOUSE:
 - {"type": "scroll", "x": 500, "y": 300, "direction": "down", "amount": 3}
 
 TECLADO:
-- {"type": "type", "text": "Ola mundo"}
+- {"type": "type", "text": "Ola mundo"} — Digitar texto.
 - {"type": "key", "key": "enter"} — Teclas: enter, tab, escape, backspace, delete, up, down, left, right, home, end, pageup, pagedown, space, f1-f12, win.
 - {"type": "hotkey", "keys": ["ctrl", "c"]}
-- {"type": "key_down", "key": "shift"}
-- {"type": "key_up", "key": "shift"}
+- {"type": "key_down", "key": "shift"} / {"type": "key_up", "key": "shift"}
 
 APLICATIVOS:
 - {"type": "open_app", "app": "chrome"}
 - {"type": "run_command", "command": "dir"}
 
 NAVEGACAO WEB:
-- {"type": "navigate", "url": "https://google.com"} — Melhor forma de abrir sites.
+- {"type": "navigate", "url": "https://google.com"} — MELHOR forma de abrir sites. SEMPRE use em vez de clicar na barra de endereco.
 
 JANELAS:
 - {"type": "focus_window", "title": "Chrome"}
@@ -216,20 +266,35 @@ JANELAS:
 ESPERA:
 - {"type": "wait", "ms": 2000}
 
+=== NAVEGACAO EM NAVEGADORES WEB ===
+
+HIERARQUIA DE CONFIABILIDADE:
+1. ATALHOS: Ctrl+L (barra endereco), Ctrl+T (nova aba), Tab (proximo campo), Enter (confirmar).
+2. ACAO "navigate": Para URLs, SEMPRE use navigate.
+3. Tab: Em formularios, use Tab para pular campos — mais confiavel que cliques.
+4. CLIQUES: Quando necessario, clique no CENTRO EXATO do elemento.
+
+ELEMENTOS NO NAVEGADOR:
+- Botoes: clique no CENTRO do texto do botao.
+- Links: clique no MEIO do texto.
+- Campos de input: clique no CENTRO do retangulo do campo.
+- Use Tab para navegar formularios.
+
 === DICAS WINDOWS ===
 
-ABRIR APPS (metodo mais confiavel):
+ABRIR APPS:
 1. key "win" → wait 500ms → type nome do app → wait 1000ms → key "enter"
 2. Ou use open_app diretamente.
 
 NAVEGACAO: Use "navigate" em vez de clicar na barra de endereco.
 ESPERAS: Sempre espere apos abrir apps (2000ms) e apos navegar (3000-5000ms).
-RECUPERACAO: Se o screenshot nao mudou, tente abordagem diferente.
+RECUPERACAO DE CLIQUES: Se o screenshot NAO mudou apos seu clique, o clique ERROU. NAO repita. Tente: (a) clicar mais ao CENTRO, (b) usar atalho de teclado, (c) Tab, (d) abordagem diferente.
 
-=== REGRAS ===
+=== REGRAS ABSOLUTAS ===
 - Retorne SOMENTE JSON valido.
 - SEMPRE inclua "thinking".
 - Execute UMA acao por turno.
+- Use coordenadas em pixels do screenshot. Elas serao convertidas automaticamente.
 """
 
 # ---------------------------------------------------------------------------
@@ -237,6 +302,29 @@ RECUPERACAO: Se o screenshot nao mudou, tente abordagem diferente.
 # ---------------------------------------------------------------------------
 
 VISION_SYSTEM_PROMPT = _VISION_SYSTEM_PROMPT_LINUX if sys.platform.startswith("linux") else _VISION_SYSTEM_PROMPT_WINDOWS
+
+
+_IS_LINUX = sys.platform.startswith("linux")
+
+
+def _get_active_window_info() -> dict:
+    """Detect the currently focused window (Linux only via xdotool)."""
+    if not _IS_LINUX:
+        return {}
+    try:
+        name = subprocess.run(
+            ["xdotool", "getactivewindow", "getwindowname"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        if not name:
+            return {}
+        is_browser = any(
+            b in name.lower()
+            for b in ("chrome", "firefox", "chromium", "edge", "brave", "opera", "mozilla")
+        )
+        return {"window_name": name, "is_browser": is_browser}
+    except Exception:
+        return {}
 
 
 class Orchestrator:
@@ -248,6 +336,51 @@ class Orchestrator:
     @property
     def is_busy(self) -> bool:
         return self._busy
+
+    # ------------------------------------------------------------------
+    # Coordinate helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _scale_coords(
+        action: dict,
+        sent_w: int, sent_h: int,
+        native_w: int, native_h: int,
+    ) -> dict:
+        """Scale coordinates from LLM image-space to native screen-space."""
+        if sent_w <= 0 or sent_h <= 0:
+            return action
+        if sent_w == native_w and sent_h == native_h:
+            return action
+
+        scale_x = native_w / sent_w
+        scale_y = native_h / sent_h
+        scaled = dict(action)
+
+        for key in ("x", "from_x", "to_x"):
+            if key in scaled and isinstance(scaled[key], (int, float)):
+                scaled[key] = int(round(scaled[key] * scale_x))
+        for key in ("y", "from_y", "to_y"):
+            if key in scaled and isinstance(scaled[key], (int, float)):
+                scaled[key] = int(round(scaled[key] * scale_y))
+
+        return scaled
+
+    @staticmethod
+    def _clamp_coords(action: dict, native_w: int, native_h: int) -> dict:
+        """Clamp coordinates to valid screen bounds."""
+        clamped = dict(action)
+        for key in ("x", "from_x", "to_x"):
+            if key in clamped and isinstance(clamped[key], (int, float)):
+                clamped[key] = max(0, min(int(clamped[key]), native_w - 1))
+        for key in ("y", "from_y", "to_y"):
+            if key in clamped and isinstance(clamped[key], (int, float)):
+                clamped[key] = max(0, min(int(clamped[key]), native_h - 1))
+        return clamped
+
+    # ------------------------------------------------------------------
+    # Vision loop (main instruction handler)
+    # ------------------------------------------------------------------
 
     async def handle_instruction(self, message: dict) -> None:
         session_id = message.get("session_id", "unknown")
@@ -272,13 +405,24 @@ class Orchestrator:
 
         try:
             for step in range(MAX_VISION_STEPS):
-                screenshot = capture_screenshot()
-                if not screenshot:
+                sc = capture_screenshot()
+                screenshot_b64 = sc["image"]
+                sent_w = sc["sent_w"]
+                sent_h = sc["sent_h"]
+                native_w = sc["native_w"]
+                native_h = sc["native_h"]
+
+                if not screenshot_b64:
                     await self._send_error(session_id, step, "Failed to capture screenshot")
                     return
 
-                messages = self._build_vision_messages(instruction, action_history, step, stuck_count, consecutive_errors)
-                llm_response = await self.llm.chat_with_vision(messages, screenshot)
+                messages = self._build_vision_messages(
+                    instruction, action_history, step,
+                    stuck_count, consecutive_errors,
+                    sent_w=sent_w, sent_h=sent_h,
+                    native_w=native_w, native_h=native_h,
+                )
+                llm_response = await self.llm.chat_with_vision(messages, screenshot_b64)
                 result = parse_single_action(llm_response)
 
                 if result is None:
@@ -298,13 +442,13 @@ class Orchestrator:
                 if result.get("done"):
                     done_message = result.get("message", "")
                     log.info(f"Task complete at step {step + 1}: {done_message}")
-                    final_screenshot = capture_screenshot()
-                    if final_screenshot:
+                    final_sc = capture_screenshot()
+                    if final_sc["image"]:
                         await self.connection.send({
                             "type": "screenshot",
                             "session_id": session_id,
                             "action_index": step,
-                            "screenshot": final_screenshot,
+                            "screenshot": final_sc["image"],
                             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                         })
                     await self.connection.send({
@@ -334,6 +478,10 @@ class Orchestrator:
                     action_history.append({"action": result, "success": False, "error": f"Acao desconhecida: {action_type}. Use apenas acoes validas.", "thinking": thinking})
                     consecutive_errors += 1
                     continue
+
+                # --- Scale LLM coords (image-space) → native screen coords ---
+                result = self._scale_coords(result, sent_w, sent_h, native_w, native_h)
+                result = self._clamp_coords(result, native_w, native_h)
 
                 current_action_key = json.dumps(result, sort_keys=True)
                 if current_action_key == last_action_key:
@@ -373,13 +521,13 @@ class Orchestrator:
 
                 hl_x = exec_result.get("x") if exec_result.get("success") else None
                 hl_y = exec_result.get("y") if exec_result.get("success") else None
-                post_screenshot = capture_screenshot(hl_x, hl_y)
-                if post_screenshot:
+                post_sc = capture_screenshot(hl_x, hl_y)
+                if post_sc["image"]:
                     await self.connection.send({
                         "type": "screenshot",
                         "session_id": session_id,
                         "action_index": step,
-                        "screenshot": post_screenshot,
+                        "screenshot": post_sc["image"],
                         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     })
 
@@ -435,14 +583,14 @@ class Orchestrator:
 
                 highlight_x = action.get("x")
                 highlight_y = action.get("y")
-                screenshot = capture_screenshot(highlight_x, highlight_y)
+                sc = capture_screenshot(highlight_x, highlight_y)
 
-                if screenshot:
+                if sc["image"]:
                     await self.connection.send({
                         "type": "screenshot",
                         "session_id": session_id,
                         "action_index": i,
-                        "screenshot": screenshot,
+                        "screenshot": sc["image"],
                         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     })
 
@@ -458,8 +606,12 @@ class Orchestrator:
         })
         log.info(f"All {total} actions completed for session {session_id}")
 
-    def _build_vision_messages(self, instruction: str, action_history: list[dict], step: int, stuck_count: int = 0, consecutive_errors: int = 0) -> list[dict]:
-        native_w, native_h = get_native_size()
+    def _build_vision_messages(
+        self, instruction: str, action_history: list[dict], step: int,
+        stuck_count: int = 0, consecutive_errors: int = 0,
+        sent_w: int = 0, sent_h: int = 0,
+        native_w: int = 0, native_h: int = 0,
+    ) -> list[dict]:
 
         history_text = ""
         if action_history:
@@ -494,14 +646,23 @@ class Orchestrator:
         if steps_remaining <= 5:
             urgency = f"\nATENCAO: Restam apenas {steps_remaining} passos. Finalize a tarefa rapidamente ou sinalize conclusao."
 
+        # Active window context (Linux only)
+        window_ctx = ""
+        win_info = _get_active_window_info()
+        if win_info:
+            window_ctx = f"\nJanela ativa: {win_info.get('window_name', 'desconhecida')}"
+            if win_info.get("is_browser"):
+                window_ctx += " [NAVEGADOR DETECTADO — prefira atalhos de teclado e Tab para navegar]"
+
         user_text = (
             f"Tarefa: {instruction}\n"
             f"Passo atual: {step + 1}/{MAX_VISION_STEPS}\n"
-            f"Resolucao da tela: {native_w}x{native_h} pixels"
+            f"Resolucao do screenshot: {sent_w}x{sent_h} pixels"
+            f"{window_ctx}"
             f"{history_text}"
             f"{warning_text}"
             f"{urgency}\n\n"
-            "Analise o screenshot atentamente. Pense sobre o que voce ve e qual deve ser o proximo passo.\n"
+            "Analise o screenshot atentamente. Use coordenadas baseadas na imagem que voce ve.\n"
             'Responda SOMENTE com JSON valido no formato:\n'
             '{"thinking": "o que eu vejo e o que vou fazer", "action": {...}}\n'
             'Ou {"done": true, "message": "..."} se a tarefa esta completa.'
