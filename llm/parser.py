@@ -8,10 +8,10 @@ from core.logger import get_logger
 log = get_logger("llm.parser")
 
 ALLOWED_ACTIONS = {
-    "wait", "move", "click", "double_click", "right_click", "scroll",
+    "wait", "move", "click", "double_click", "right_click", "scroll", "drag",
     "type", "key", "hotkey", "key_down", "key_up",
-    "open_app", "run_command", "focus_window", "close_window", "maximize_window",
-    "upload_file", "create_file", "read_file",
+    "open_app", "run_command", "navigate",
+    "focus_window", "close_window", "maximize_window",
 }
 
 
